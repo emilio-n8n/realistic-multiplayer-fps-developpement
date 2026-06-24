@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PLAYER, WEAPON } from "./types";
+import { PLAYER, WEAPON_STATS } from "./types";
 import type { PState } from "./types";
 import * as Sfx from "./sound";
 import type { Game } from "./engine";
@@ -282,7 +282,8 @@ export class BotManager {
         const hitChance = Math.max(0.15, 0.85 - dist / 60) * mult.acc * campPenalty;
         if (Math.random() < hitChance) {
           const head = Math.random() < mult.hs;
-          const dmg = head ? Math.round(WEAPON.damage * WEAPON.headMult) : WEAPON.damage;
+          const ws = WEAPON_STATS.ar15;
+          const dmg = head ? Math.round(ws.damage * ws.headMult) : ws.damage;
           if (target.id === game.selfId) game.damage.takeDamage(dmg, bot.id, head);
           else game.damage.applyDamage(target.id, dmg, head, bot.id);
         }

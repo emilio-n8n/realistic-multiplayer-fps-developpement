@@ -162,6 +162,49 @@ export class FxManager {
     game.camera.add(mesh);
   }
 
+  spawnAirstrikeMark(pos: THREE.Vector3) {
+    const game = this.game;
+    // Red smoke column
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff3333, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.5, 3, 8), mat);
+    mesh.position.set(pos.x, 1.5, pos.z);
+    game.scene.add(mesh);
+    // Auto-remove after 3s by adding to a cleanup list
+    if (!game.decals) (game as any).airstrikeMarkers = [];
+    if (!(game as any).airstrikeMarkers) (game as any).airstrikeMarkers = [];
+    (game as any).airstrikeMarkers.push({ mesh, time: game.now });
+    // We'll clean these up in update - but for simplicity, they just live and fade
+    // Particles
+    this.spawnSparks(pos, 0xff3333, 8);
+  }
+
+  spawnAirstrikeBomb(pos: THREE.Vector3) {
+    this.spawnExplosionFx(pos);
+    this.spawnSparks(pos, 0xffff00, 12);
+    this.spawnSparks(pos, 0xff8800, 8);
+  }
+
+  createSmokeCloud(pos: THREE.Vector3) {
+    const game = this.game;
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xcccccc,
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8), mat);
+    mesh.position.copy(pos);
+    mesh.scale.setScalar(0.1);
+    game.scene.add(mesh);
+    const startTime = game.now;
+    const duration = 5;
+    if (!(game as any).smokeFx) (game as any).smokeFx = [];
+    (game as any).smokeFx.push({ mesh, startTime, duration, pos: pos.clone() });
+  }
+
   update(dt: number) {
     const game = this.game;
     if (game.now < game.flashUntil) {
@@ -244,6 +287,43 @@ export class FxManager {
       const speed = game.lp.alive ? 3 : 2;
       const cur = (game.deathOverlay.material as THREE.MeshBasicMaterial).opacity;
       (game.deathOverlay.material as THREE.MeshBasicMaterial).opacity = cur + (target - cur) * Math.min(1, dt * speed);
+    }
+    // Airstrike markers cleanup
+    if ((game as any).airstrikeMarkers) {
+      const markers = (game as any).airstrikeMarkers as { mesh: THREE.Mesh; time: number }[];
+      for (let i = markers.length - 1; i >= 0; i--) {
+        const m = markers[i];
+        const age = game.now - m.time;
+        if (age > 3) {
+          game.scene.remove(m.mesh);
+          m.mesh.geometry.dispose();
+          (m.mesh.material as THREE.Material).dispose();
+          markers.splice(i, 1);
+        } else {
+          const opacity = Math.max(0, 0.5 - age / 6);
+          (m.mesh.material as THREE.MeshBasicMaterial).opacity = opacity;
+          m.mesh.position.y = 1.5 + age * 0.5;
+        }
+      }
+    }
+    // Smoke FX
+    if ((game as any).smokeFx) {
+      const smoke = (game as any).smokeFx as { mesh: THREE.Mesh; startTime: number; duration: number; pos: THREE.Vector3 }[];
+      for (let i = smoke.length - 1; i >= 0; i--) {
+        const s = smoke[i];
+        const age = game.now - s.startTime;
+        if (age > s.duration) {
+          game.scene.remove(s.mesh);
+          s.mesh.geometry.dispose();
+          (s.mesh.material as THREE.Material).dispose();
+          smoke.splice(i, 1);
+        } else {
+          const t = age / s.duration;
+          const scale = 0.1 + t * 3;
+          s.mesh.scale.setScalar(scale);
+          (s.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (1 - t) * 0.25);
+        }
+      }
     }
   }
 }

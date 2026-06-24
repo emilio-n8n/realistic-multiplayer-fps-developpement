@@ -1,4 +1,5 @@
-import { PLAYER, WEAPON } from "./types";
+import { PLAYER, WEAPON_STATS, KILLSTREAK_DEFS, KILLSTREAK_LIST } from "./types";
+import type { KillstreakType } from "./types";
 import * as Sfx from "./sound";
 import type { Game } from "./engine";
 
@@ -64,6 +65,8 @@ export class DamageManager {
     if (sourceId === game.selfId) {
       game.lp.kills++;
       game.lp.killstreak++;
+      game.streakKills++;
+      this.checkKillstreakUnlocks();
     } else {
       const s = game.netState.get(sourceId);
       if (s) {
@@ -84,6 +87,27 @@ export class DamageManager {
     this.handleKillFeed(killerName, victimName, head, involvesSelf);
     game.netHandler.broadcastAll({ t: "kill", killer: killerName, victim: victimName, head, killerId: sourceId, victimId });
     if (sourceId === game.selfId) this.onSelfKill(victimName, head);
+  }
+
+  private checkKillstreakUnlocks() {
+    const game = this.game;
+    for (const ks of KILLSTREAK_LIST) {
+      const def = KILLSTREAK_DEFS[ks];
+      if (game.streakKills >= def.kills && !game.killstreaksReady.includes(ks)) {
+        game.killstreaksReady.push(ks);
+        this.flashMessage(`${def.name} PRÊT (B pour utiliser)`);
+      }
+    }
+  }
+
+  useKillstreak(type: KillstreakType) {
+    const game = this.game;
+    game.killstreaksReady = game.killstreaksReady.filter(k => k !== type);
+    switch (type) {
+      case "uav": game.activateUAV(); break;
+      case "airstrike": game.activateAirstrike(); break;
+      case "helicopter": game.activateHelicopter(); break;
+    }
   }
 
   takeDamage(dmg: number, sourceId: string, head: boolean) {
@@ -123,7 +147,8 @@ export class DamageManager {
 
   handleKillFeed(killer: string, victim: string, head: boolean, involvesSelf: boolean) {
     const game = this.game;
-    game.killfeed.push({ id: game.kfId++, killer, victim, weapon: WEAPON.name, head, self: involvesSelf, time: performance.now() });
+    const wName = WEAPON_STATS[game.weaponSystem.weaponType].name;
+    game.killfeed.push({ id: game.kfId++, killer, victim, weapon: wName, head, self: involvesSelf, time: performance.now() });
     if (game.killfeed.length > 6) game.killfeed.shift();
   }
 
@@ -141,6 +166,8 @@ export class DamageManager {
     if (!game.lp.alive) return;
     game.lp.alive = false;
     game.lp.respawnAt = game.now + 3;
+    game.streakKills = 0;
+    game.killstreaksReady = [];
     Sfx.deathSound();
     this.flashMessage("VOUS ÊTES MORT");
     game.pushHud(true);
@@ -161,7 +188,7 @@ export class DamageManager {
     lp.alive = true;
     lp.vel.set(0, 0, 0);
     lp.vy = 0;
-    lp.ammo = WEAPON.magSize;
+    lp.ammo = WEAPON_STATS[game.weaponSystem.weaponType].magSize;
     lp.reloading = false;
     this.flashMessage("PRÊT AU COMBAT");
     game.pushHud(true);

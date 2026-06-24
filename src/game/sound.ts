@@ -6,6 +6,8 @@ let master: GainNode | null = null;
 let noiseBuffer: AudioBuffer | null = null;
 let reverbNode: ConvolverNode | null = null;
 let enabled = true;
+let helicopterOsc: OscillatorNode | null = null;
+let helicopterNoise: AudioBufferSourceNode | null = null;
 
 export function initAudio() {
   if (ctx) return;
@@ -449,4 +451,491 @@ export function uiHover() {
   osc.connect(g).connect(master!);
   osc.start(t);
   osc.stop(t + 0.07);
+}
+
+// ---------------------------------------------------------------------------
+// SMG SHOT — high-pitched, short pop with minimal sub-bass
+// ---------------------------------------------------------------------------
+export function smgShot(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 60) / 60, 0.7));
+  const muffle = Math.min(1, d / 30);
+
+  const out = ctx.createGain();
+  out.gain.value = 0.6 * vol;
+  out.connect(master!);
+
+  if (muffle > 0.01) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.max(300, 4000 - d * 90);
+    out.disconnect();
+    out.connect(lp).connect(master!);
+  }
+
+  // Pop — noise burst at 3kHz
+  const pop = noiseSource(0.05);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 3000;
+  bp.Q.value = 4;
+  const pg = ctx.createGain();
+  pg.gain.setValueAtTime(0.0001, t);
+  pg.gain.exponentialRampToValueAtTime(0.5 * vol, t + 0.002);
+  pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  pop.connect(bp).connect(pg).connect(out);
+
+  // Sub-bass — very minimal
+  const sub = ctx.createOscillator();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(100, t);
+  sub.frequency.exponentialRampToValueAtTime(50, t + 0.04);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.08 * vol, t + 0.002);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  sub.connect(sg).connect(out);
+  sub.start(t);
+  sub.stop(t + 0.06);
+}
+
+// ---------------------------------------------------------------------------
+// SHOTGUN SHOT — deep boom with long reverb tail
+// ---------------------------------------------------------------------------
+export function shotgunShot(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 60) / 60, 0.7));
+  const muffle = Math.min(1, d / 30);
+
+  const out = ctx.createGain();
+  out.gain.value = 1.0 * vol;
+  out.connect(master!);
+
+  if (muffle > 0.01) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.max(150, 2000 - d * 60);
+    out.disconnect();
+    out.connect(lp).connect(master!);
+  }
+
+  // Noise burst at 800Hz
+  const ns = noiseSource(0.15);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 800;
+  bp.Q.value = 2;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.6 * vol, t + 0.005);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+  ns.connect(bp).connect(ng).connect(out);
+
+  // Low-frequency rumble 60Hz→25Hz
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(60, t);
+  osc.frequency.exponentialRampToValueAtTime(25, t + 0.35);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.7 * vol, t + 0.005);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  osc.connect(og).connect(out);
+  osc.start(t);
+  osc.stop(t + 0.45);
+
+  // Reverb tail
+  const revG = ctx.createGain();
+  revG.gain.value = Math.min(0.15 + muffle * 0.35, 0.4);
+  out.connect(revG);
+  revG.connect(reverbNode!);
+}
+
+// ---------------------------------------------------------------------------
+// SNIPER SHOT — loud crack + deep report with long reverb
+// ---------------------------------------------------------------------------
+export function sniperShot(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 60) / 60, 0.7));
+  const muffle = Math.min(1, d / 30);
+
+  const out = ctx.createGain();
+  out.gain.value = 1.2 * vol;
+  out.connect(master!);
+
+  if (muffle > 0.01) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.max(200, 3000 - d * 80);
+    out.disconnect();
+    out.connect(lp).connect(master!);
+  }
+
+  // Sharp transient — bandpass at 4kHz
+  const crack = noiseSource(0.03);
+  const crackF = ctx.createBiquadFilter();
+  crackF.type = "bandpass";
+  crackF.frequency.value = 4000;
+  crackF.Q.value = 5;
+  const crackG = ctx.createGain();
+  crackG.gain.setValueAtTime(0.0001, t);
+  crackG.gain.exponentialRampToValueAtTime(1.0 * vol, t + 0.001);
+  crackG.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+  crack.connect(crackF).connect(crackG).connect(out);
+
+  // Deep report at 200Hz
+  const body = noiseSource(0.3);
+  const bodyF = ctx.createBiquadFilter();
+  bodyF.type = "lowpass";
+  bodyF.frequency.value = 400;
+  const bodyG = ctx.createGain();
+  bodyG.gain.setValueAtTime(0.0001, t);
+  bodyG.gain.exponentialRampToValueAtTime(0.6 * vol, t + 0.005);
+  bodyG.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  body.connect(bodyF).connect(bodyG).connect(out);
+
+  // Sub-bass
+  const sub = ctx.createOscillator();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(200, t);
+  sub.frequency.exponentialRampToValueAtTime(50, t + 0.25);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.5 * vol, t + 0.005);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  sub.connect(sg).connect(out);
+  sub.start(t);
+  sub.stop(t + 0.35);
+
+  // Reverb tail
+  const revG = ctx.createGain();
+  revG.gain.value = Math.min(0.2 + muffle * 0.4, 0.5);
+  out.connect(revG);
+  revG.connect(reverbNode!);
+}
+
+// ---------------------------------------------------------------------------
+// PISTOL SHOT — sharp pop, quick transient, short decay
+// ---------------------------------------------------------------------------
+export function pistolShot(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 60) / 60, 0.7));
+  const muffle = Math.min(1, d / 30);
+
+  const out = ctx.createGain();
+  out.gain.value = 0.7 * vol;
+  out.connect(master!);
+
+  if (muffle > 0.01) {
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.max(300, 3500 - d * 80);
+    out.disconnect();
+    out.connect(lp).connect(master!);
+  }
+
+  // Noise burst at 2kHz
+  const ns = noiseSource(0.04);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 2000;
+  bp.Q.value = 4;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.45 * vol, t + 0.002);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+  ns.connect(bp).connect(ng).connect(out);
+
+  // Sine 200Hz
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(200, t);
+  osc.frequency.exponentialRampToValueAtTime(120, t + 0.06);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.2 * vol, t + 0.003);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+  osc.connect(og).connect(out);
+  osc.start(t);
+  osc.stop(t + 0.1);
+}
+
+// ---------------------------------------------------------------------------
+// MELEE SWISH — bandpass noise sweep
+// ---------------------------------------------------------------------------
+export function meleeSwish() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+
+  const ns = noiseSource(0.12);
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.setValueAtTime(500, t);
+  bp.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+  bp.Q.value = 3;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  ns.connect(bp).connect(g).connect(master!);
+}
+
+// ---------------------------------------------------------------------------
+// MELEE HIT — dull thud + bone crack
+// ---------------------------------------------------------------------------
+export function meleeHit() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+
+  // Dull thud — lowpass noise at 200Hz
+  const ns = noiseSource(0.1);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 200;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.35, t + 0.003);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  ns.connect(lp).connect(ng).connect(master!);
+
+  // Bone crack — square wave click at 400Hz
+  const osc = ctx.createOscillator();
+  osc.type = "square";
+  osc.frequency.value = 400;
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.08, t + 0.002);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  osc.connect(og).connect(master!);
+  osc.start(t);
+  osc.stop(t + 0.05);
+}
+
+// ---------------------------------------------------------------------------
+// FLASHBANG DETONATE — loud noise burst with metallic ring
+// ---------------------------------------------------------------------------
+export function flashbangDetonate(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 40) / 40, 0.6));
+
+  const out = ctx.createGain();
+  out.gain.value = vol;
+  out.connect(master!);
+
+  // White noise burst 0.3s
+  const ns = noiseSource(0.35);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.9 * vol, t + 0.003);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  ns.connect(ng).connect(out);
+
+  // Metallic ringing tail — sine 3000Hz slow decay
+  const ring = ctx.createOscillator();
+  ring.type = "sine";
+  ring.frequency.value = 3000;
+  const rg = ctx.createGain();
+  rg.gain.setValueAtTime(0.0001, t + 0.05);
+  rg.gain.exponentialRampToValueAtTime(0.25 * vol, t + 0.1);
+  rg.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+  ring.connect(rg).connect(out);
+  ring.start(t);
+  ring.stop(t + 0.85);
+}
+
+// ---------------------------------------------------------------------------
+// SMOKE DEPLOY — highpass hiss
+// ---------------------------------------------------------------------------
+export function smokeDeploy() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+
+  const ns = noiseSource(0.55);
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 4000;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  ns.connect(hp).connect(g).connect(master!);
+}
+
+// ---------------------------------------------------------------------------
+// CLAYMORE BEEP — two quick high-pitched beeps
+// ---------------------------------------------------------------------------
+export function claymoreBeep() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+
+  const beep = (startTime: number) => {
+    const osc = ctx!.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = 2000;
+    const g = ctx!.createGain();
+    g.gain.setValueAtTime(0.0001, startTime);
+    g.gain.exponentialRampToValueAtTime(0.15, startTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.04);
+    osc.connect(g).connect(master!);
+    osc.start(startTime);
+    osc.stop(startTime + 0.05);
+  };
+
+  beep(t);
+  beep(t + 0.15);
+}
+
+// ---------------------------------------------------------------------------
+// CLAYMORE EXPLODE — concussive blast
+// ---------------------------------------------------------------------------
+export function claymoreExplode(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 40) / 40, 0.7));
+
+  const out = ctx.createGain();
+  out.gain.value = vol;
+  out.connect(master!);
+
+  // Low bandpass noise at 100Hz
+  const ns = noiseSource(0.3);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 100;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.8 * vol, t + 0.005);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+  ns.connect(lp).connect(ng).connect(out);
+
+  // Sub-bass sine 50→20Hz
+  const sub = ctx.createOscillator();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(50, t);
+  sub.frequency.exponentialRampToValueAtTime(20, t + 0.2);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.exponentialRampToValueAtTime(0.6 * vol, t + 0.005);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+  sub.connect(sg).connect(out);
+  sub.start(t);
+  sub.stop(t + 0.3);
+}
+
+// ---------------------------------------------------------------------------
+// UAV PING — rising sine sweep
+// ---------------------------------------------------------------------------
+export function uavPing() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(800, t);
+  osc.frequency.exponentialRampToValueAtTime(1500, t + 0.3);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+  osc.connect(g).connect(master!);
+  osc.start(t);
+  osc.stop(t + 0.4);
+}
+
+// ---------------------------------------------------------------------------
+// AIRSTRIKE WHISTLE — descending whistle with distance attenuation
+// ---------------------------------------------------------------------------
+export function airstrikeWhistle(distance = 0) {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const d = Math.max(0, distance);
+  const vol = Math.max(0.02, Math.pow(1 - Math.min(d, 80) / 80, 0.6));
+
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(2000, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 1.0);
+
+  // Volume increases toward end
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.001 * vol, t + 0.2);
+  g.gain.linearRampToValueAtTime(0.12 * vol, t + 0.8);
+  g.gain.linearRampToValueAtTime(0.0001, t + 1.05);
+
+  osc.connect(g).connect(master!);
+  osc.start(t);
+  osc.stop(t + 1.1);
+}
+
+// ---------------------------------------------------------------------------
+// HELICOPTER LOOP — rhythmic wop-wop, start/stop via stop flag
+// ---------------------------------------------------------------------------
+export function helicopterLoop(stop = false) {
+  if (!ctx || !enabled) return;
+
+  if (stop) {
+    if (helicopterOsc) {
+      helicopterOsc.stop();
+      helicopterOsc.disconnect();
+      helicopterOsc = null;
+    }
+    if (helicopterNoise) {
+      helicopterNoise.stop();
+      helicopterNoise.disconnect();
+      helicopterNoise = null;
+    }
+    return;
+  }
+
+  if (helicopterOsc) return; // already playing
+
+  const t = ctx.currentTime;
+
+  // Looping noise source
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuffer;
+  noise.loop = true;
+
+  // Bandpass to shape rotor sound
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 60;
+  bp.Q.value = 2;
+
+  // Amplitude modulation gain
+  const ampGain = ctx.createGain();
+  ampGain.gain.value = 0.5;
+
+  // LFO at 4Hz for wop-wop effect
+  const lfo = ctx.createOscillator();
+  lfo.type = "sine";
+  lfo.frequency.value = 4;
+
+  // Scale LFO output to modulation depth
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.value = 0.45;
+  lfo.connect(lfoGain);
+  lfoGain.connect(ampGain.gain);
+
+  const out = ctx.createGain();
+  out.gain.value = 0.12;
+
+  noise.connect(bp).connect(ampGain).connect(out).connect(master!);
+  lfo.start(t);
+  noise.start(t);
+
+  helicopterOsc = lfo;
+  helicopterNoise = noise;
 }

@@ -26,8 +26,15 @@ export class LocalPlayerManager {
 
     const wantCrouch = game.keys.has("ControlLeft") || game.keys.has("KeyC");
     const sprinting = game.keys.has("ShiftLeft") && fwd > 0 && !wantCrouch;
+    const wasSprinting = lp.sprinting;
+    lp.sprinting = sprinting;
 
-    if (sprinting) lp.sprintEnd = game.now + PLAYER.sprintReadyDelay;
+    if (sprinting) {
+      lp.sprintEnd = game.now + PLAYER.sprintReadyDelay;
+    }
+    if (wasSprinting && !sprinting) {
+      lp.sprintStoppedAt = game.now;
+    }
 
     const wasMoving = Math.hypot(lp.vel.x, lp.vel.z) > 1;
     if (!lp.sliding && sprinting && wantCrouch && lp.onGround && wasMoving) {

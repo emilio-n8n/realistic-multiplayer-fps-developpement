@@ -5,6 +5,7 @@ interface LobbyPeer {
   name: string;
   color: number;
   team?: "red" | "blue";
+  weapon?: string;
 }
 
 interface Props {
@@ -23,6 +24,8 @@ interface Props {
 function hex(c: number) {
   return "#" + c.toString(16).padStart(6, "0");
 }
+
+const ABBR: Record<string, string> = { ar15: "AR", smg: "SMG", shotgun: "SG", sniper: "SR", pistol: "PST" };
 
 export default function Lobby({ mode, code, status, error, name, peers, botCount, team, onStart, onLeave }: Props) {
   const isHost = mode === "host";
@@ -142,6 +145,7 @@ export default function Lobby({ mode, code, status, error, name, peers, botCount
                   <div key={p.id} className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
                     <span className="inline-block h-3 w-3 rounded-full ring-2 ring-white/10" style={{ background: hex(p.color) }} />
                     <span className="text-white/80">{p.name}</span>
+                    {p.weapon && <span className="ml-1 text-[10px] text-white/40">({ABBR[p.weapon] ?? p.weapon.toUpperCase()})</span>}
                     {p.team && (
                       <span className={`ml-auto text-[10px] uppercase tracking-wider ${p.team === "red" ? "text-red-400" : "text-blue-400"}`}>
                         {p.team === "red" ? "Rouge" : "Bleu"}

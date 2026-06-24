@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { PState } from "./types";
-import { COLORS, WEAPON } from "./types";
+import { COLORS, WEAPON_STATS } from "./types";
 import type { NetMsg } from "../net/net";
 import * as Sfx from "./sound";
 import type { Game } from "./engine";
@@ -94,7 +94,8 @@ export class NetHandler {
         if (game.mode === "host") {
           const target = String(msg.target);
           const head = Boolean(msg.head);
-          const dmg = head ? Math.round(WEAPON.damage * WEAPON.headMult) : WEAPON.damage;
+          const wStats = WEAPON_STATS.ar15;
+          const dmg = head ? Math.round(wStats.damage * wStats.headMult) : wStats.damage;
           game.damage.applyDamage(target, dmg, head, _from);
         }
         break;
@@ -144,7 +145,7 @@ export class NetHandler {
           Sfx.explosion();
           if (game.mode === "host") {
             const source = String(msg.owner || game.selfId);
-            game.grenadeSystem.grenadeAoeDamage(pos, source);
+            game.equipment.grenadeAoeDamage(pos, source);
             game.net?.broadcast({ t: "grenade_explode", px: msg.px, py: msg.py, pz: msg.pz, owner: msg.owner }, _from);
           }
         }

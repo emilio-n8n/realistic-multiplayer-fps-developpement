@@ -5,8 +5,8 @@ import { buildWeaponView } from "./weapon";
 import type { WeaponView } from "./weapon";
 import { makeCharacter } from "./character";
 import type { CharacterView } from "./character";
-import { COLORS, PLAYER, WEAPON } from "./types";
-import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow } from "./types";
+import { COLORS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
+import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType } from "./types";
 import * as Sfx from "./sound";
 import type { Net } from "../net/net";
 import { LocalPlayerManager } from "./local-player";
@@ -15,8 +15,7 @@ import { DamageManager } from "./damage";
 import { BotManager } from "./bot-ai";
 import { FxManager } from "./fx";
 import { NetHandler } from "./network-handler";
-import { GrenadeSystem } from "./grenade";
-import type { GrenadeObj } from "./grenade";
+import { EquipmentSystem } from "./equipment";
 
 export type GameMode = "solo" | "host" | "client" | "tdm";
 
@@ -81,8 +80,8 @@ export class Game {
     alive: true,
     onGround: true,
     crouch: false,
-    ammo: WEAPON.magSize,
-    reserve: WEAPON.reserveMax,
+    ammo: WEAPON_STATS.ar15.magSize,
+    reserve: WEAPON_STATS.ar15.reserveMax,
     reloading: false,
     reloadEnd: 0,
     lastShot: 0,
@@ -97,6 +96,9 @@ export class Game {
     sliding: false,
     slideTimer: 0,
     sprintEnd: 0,
+    sprintStoppedAt: 0,
+    sprinting: false,
+    flashEnd: 0,
   };
 
   remote = new Map<string, RemoteActor>();
@@ -135,7 +137,6 @@ export class Game {
   damageTime = 0;
   hitmarker = 0;
   killmarker = 0;
-  grenades: GrenadeObj[] = [];
   lastGrenade = 0;
   hitRing: THREE.Mesh | null = null;
   hitRingTime = 0;
@@ -168,6 +169,22 @@ export class Game {
   message: string | null = null;
   messageTime = 0;
 
+  // killstreak state
+  uavActive = false;
+  uavUntil = 0;
+  airstrikePos: THREE.Vector3 | null = null;
+  airstrikeMarkerTime = 0;
+  helicopterGroup: THREE.Group | null = null;
+  helicopterBlades: { mesh: THREE.Mesh; axis: "x" | "y" | "z" }[] | null = null;
+  helicopterLastShot = 0;
+  minimapShots: { x: number; z: number; time: number }[] = [];
+
+  // equipment state
+  equipmentLethal: EquipmentType | null = "frag";
+  equipmentTactical: EquipmentType | null = "flash";
+  killstreaksReady: KillstreakType[] = [];
+  streakKills = 0;
+
   // sub-managers
   localPlayer: LocalPlayerManager;
   weaponSystem: WeaponSystem;
@@ -175,7 +192,7 @@ export class Game {
   botManager: BotManager;
   fx: FxManager;
   netHandler: NetHandler;
-  grenadeSystem: GrenadeSystem;
+  equipment: EquipmentSystem;
 
   // internal
   private container: HTMLElement;
@@ -203,7 +220,7 @@ export class Game {
     this.botManager = new BotManager(this);
     this.fx = new FxManager(this);
     this.netHandler = new NetHandler(this);
-    this.grenadeSystem = new GrenadeSystem(this);
+    this.equipment = new EquipmentSystem(this);
 
     this.initScene();
     this.initMap();
@@ -287,12 +304,20 @@ export class Game {
   }
 
   private initWeapon() {
-    this.weapon = buildWeaponView();
+    this.weapon = buildWeaponView("ar15");
     this.weapon.group.position.set(0.17, -0.15, -0.42);
     this.weapon.group.rotation.y = Math.PI;
     this.camera.add(this.weapon.group);
     this.scene.add(this.camera);
     this.fx.createDeathOverlay();
+  }
+
+  rebuildWeapon(type: import("./types").WeaponType) {
+    this.camera.remove(this.weapon.group);
+    this.weapon = buildWeaponView(type);
+    this.weapon.group.position.set(0.17, -0.15, -0.42);
+    this.weapon.group.rotation.y = Math.PI;
+    this.camera.add(this.weapon.group);
   }
 
   private initBots(n: number) {
@@ -351,7 +376,28 @@ export class Game {
   private onKeyDown = (e: KeyboardEvent) => {
     this.keys.add(e.code);
     if (e.code === "KeyR") this.weaponSystem.startReload();
-    if (e.code === "KeyG" && this.lp.alive) this.grenadeSystem.throwGrenade();
+    if (e.code === "KeyV" && this.lp.alive) this.weaponSystem.melee();
+    if (e.code === "KeyB" && this.lp.alive) {
+      if (this.killstreaksReady.length > 0) {
+        const ks = this.killstreaksReady[0];
+        this.damage.useKillstreak(ks);
+        this.killstreaksReady = this.killstreaksReady.filter(k => k !== ks);
+      }
+    }
+    if (e.code === "KeyG" && this.lp.alive && this.equipmentLethal) {
+      this.equipment.useLethal(this.equipmentLethal);
+    }
+    if (e.code === "KeyQ" && this.lp.alive && this.equipmentTactical) {
+      this.equipment.useTactical(this.equipmentTactical);
+    }
+    // Weapon switching 1-5
+    const digitMatch = e.code.match(/^Digit(\d)$/);
+    if (digitMatch) {
+      const idx = parseInt(digitMatch[1], 10) - 1;
+      if (idx >= 0 && idx < WEAPON_LIST.length) {
+        this.weaponSystem.switchWeapon(idx);
+      }
+    }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
   };
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
@@ -422,8 +468,16 @@ export class Game {
       this.localPlayer.update(dt);
       this.weaponSystem.update(dt);
       if (this.mouseDown) this.weaponSystem.tryFire();
-      this.grenadeSystem.update(dt);
+      this.equipment.update(dt);
     }
+    // Killstreak timers
+    if (this.uavActive && this.now > this.uavUntil) {
+      this.uavActive = false;
+    }
+    if (this.airstrikePos && this.now > this.airstrikeMarkerTime + 0.5) {
+      this.activateAirstrikeBombs();
+    }
+    this.updateHelicopter(dt);
     this.updateActors(dt);
     this.botManager.update(dt);
     this.fx.update(dt);
@@ -536,15 +590,21 @@ export class Game {
 
     const msg = this.message && now - this.messageTime < 1600 ? this.message : null;
 
+    // Filter minimap pings
+    const pings = this.minimapShots.filter((p) => now - p.time < 2000).map((p) => ({
+      x: p.x, z: p.z, time: p.time,
+    }));
+
+    const ws = WEAPON_STATS[this.weaponSystem.weaponType];
     const state: HudState = {
       hp: Math.round(hp),
       maxHp: PLAYER.maxHp,
       alive,
       ammo: lp.ammo,
-      mag: WEAPON.magSize,
+      mag: ws.magSize,
       reserve: lp.reserve,
       reloading: lp.reloading,
-      reloadProgress: lp.reloading ? Math.min(1, 1 - (lp.reloadEnd - this.now) / WEAPON.reloadTime) : 0,
+      reloadProgress: lp.reloading ? Math.min(1, 1 - (lp.reloadEnd - this.now) / ws.reloadTime) : 0,
       kills,
       deaths,
       killstreak: ks,
@@ -565,8 +625,8 @@ export class Game {
       playerCount: this.playerCount(),
       matchOver: this.matchOver,
       matchResult: this.matchResult,
-      weaponName: WEAPON.name,
-      fireMode: WEAPON.auto ? "auto" : "semi",
+      weaponName: ws.name,
+      fireMode: ws.auto ? "auto" : "semi",
       lastDamageDealt: this.lastDamageDealt,
       lastDamageDealtTime: this.lastDamageDealtTime,
       ping: 30,
@@ -575,6 +635,15 @@ export class Game {
       teamKillsBlue: this.teamKillsBlue,
       tdm: this.tdm,
       team: this.tdm ? this.selfTeam : "red",
+      weaponType: this.weaponSystem.weaponType,
+      weaponIndex: this.weaponSystem.weaponIndex,
+      weaponList: WEAPON_LIST,
+      streakKills: this.streakKills,
+      killstreaksReady: this.killstreaksReady,
+      uavActive: this.uavActive,
+      equipmentLethal: this.equipmentLethal,
+      equipmentTactical: this.equipmentTactical,
+      minimapPings: pings,
     };
     this.onHud(state);
   }
@@ -605,7 +674,7 @@ export class Game {
       const d = Math.hypot(dx, dz);
       if (d > 45) continue;
       const isEnemy = this.tdm ? !this.damage.isFriendly(this.selfId, p.id) : true;
-      if (isEnemy && !p.firing && d > 12) continue;
+      if (isEnemy && !p.firing && d > 12 && !this.uavActive) continue;
       const f = dx * fwd.x + dz * fwd.z;
       const r = dx * right.x + dz * right.z;
       blips.push({ x: r, z: f, enemy: isEnemy, firing: p.firing });
@@ -762,9 +831,22 @@ export class Game {
     this.lp.deaths = 0;
     this.lp.killstreak = 0;
     this.lp.respawnAt = 0;
-    this.lp.ammo = WEAPON.magSize;
-    this.lp.reserve = WEAPON.reserveMax;
+    this.lp.ammo = WEAPON_STATS.ar15.magSize;
+    this.lp.reserve = WEAPON_STATS.ar15.reserveMax;
     this.lp.reloading = false;
+    this.lp.flashEnd = 0;
+    this.streakKills = 0;
+    this.killstreaksReady = [];
+    this.uavActive = false;
+    this.uavUntil = 0;
+    this.airstrikePos = null;
+    if (this.helicopterGroup) {
+      this.scene.remove(this.helicopterGroup);
+      this.helicopterGroup = null;
+    }
+    this.helicopterBlades = null;
+    this.minimapShots = [];
+    Sfx.helicopterLoop(true);
 
     const sp = this.pickSpawn(this.lp.pos, this.tdm ? this.selfTeam : undefined);
     this.lp.pos.set(sp.x, 0, sp.z);
@@ -773,6 +855,161 @@ export class Game {
 
     this.damage.flashMessage("NOUVELLE PARTIE");
     this.pushHud(true);
+  }
+
+  // ---------------- killstreaks ----------------
+  activateUAV() {
+    this.uavActive = true;
+    this.uavUntil = this.now + 10;
+    this.damage.flashMessage("UAV ACTIF");
+    this.pushHud(true);
+  }
+
+  activateAirstrike() {
+    // Get the position at the reticle (center of screen)
+    const center = new THREE.Vector2(0, 0);
+    this.raycaster.setFromCamera(center, this.camera);
+    const dir = this.raycaster.ray.direction.clone();
+    const origin = this.camera.position.clone();
+    const far = 80;
+    const end = origin.clone().add(dir.clone().multiplyScalar(far));
+
+    // Find where the ray hits the ground
+    const targets = [...this.map.rayMeshes];
+    this.raycaster.far = far;
+    const hits = this.raycaster.intersectObjects(targets, true);
+    let pos: THREE.Vector3;
+    if (hits.length > 0) {
+      pos = hits[0].point.clone();
+      pos.y = 0;
+    } else {
+      pos = end.clone();
+      pos.y = 0;
+    }
+
+    this.airstrikePos = pos;
+    this.airstrikeMarkerTime = this.now;
+    this.fx.spawnAirstrikeMark(pos);
+    Sfx.airstrikeWhistle();
+    this.damage.flashMessage("APPUI AÉRIEN EN COURS");
+    this.pushHud(true);
+  }
+
+  private activateAirstrikeBombs() {
+    if (!this.airstrikePos) return;
+    const pos = this.airstrikePos;
+    this.airstrikePos = null;
+
+    // Spawn bombs along a line perpendicular to the player's view
+    const fwd = new THREE.Vector3(-Math.sin(this.lp.yaw), 0, -Math.cos(this.lp.yaw));
+    const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+    for (let i = -2; i <= 2; i++) {
+      const offset = right.clone().multiplyScalar(i * 3);
+      const bombPos = pos.clone().add(offset);
+      bombPos.y = 0;
+      setTimeout(() => {
+        this.fx.spawnAirstrikeBomb(bombPos);
+        this.fx.spawnExplosionFx(bombPos);
+        Sfx.explosion();
+        // Damage in area
+        for (const a of this.remote.values()) {
+          if (!a.state.alive) continue;
+          const d = new THREE.Vector3(a.state.px, 0, a.state.pz).distanceTo(bombPos);
+          if (d < 5) {
+            this.damage.applyDamage(a.state.id, 60, false, this.selfId);
+          }
+        }
+        if (this.lp.alive) {
+          const d = new THREE.Vector3(this.lp.pos.x, 0, this.lp.pos.z).distanceTo(bombPos);
+          if (d < 5 && !this.damage.isFriendly(this.selfId, this.selfId)) {
+            this.damage.takeDamage(60, this.selfId, false);
+          }
+        }
+      }, i * 100 + 100);
+    }
+  }
+
+  activateHelicopter() {
+    if (this.helicopterGroup) return;
+    const group = new THREE.Group();
+
+    // Body
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a3a2a, roughness: 0.6 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.9), bodyMat);
+    body.position.y = 0;
+    group.add(body);
+
+    // Tail
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.6), bodyMat);
+    tail.position.set(0, 0.05, -0.65);
+    group.add(tail);
+
+    // Blades (two crossed planes)
+    const bladeMat = new THREE.MeshBasicMaterial({
+      color: 0x555555, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const blade1 = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.15), bladeMat);
+    blade1.position.y = 0.2;
+    const blade2 = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.15), bladeMat);
+    blade2.position.y = 0.2;
+    blade2.rotation.y = Math.PI / 2;
+    group.add(blade1);
+    group.add(blade2);
+
+    // Tail rotor
+    const tailRotor = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.04), bladeMat);
+    tailRotor.position.set(0, 0.1, -0.95);
+    group.add(tailRotor);
+
+    group.position.set(this.lp.pos.x + 15, 8, this.lp.pos.z + 15);
+    this.scene.add(group);
+    this.helicopterGroup = group;
+    this.helicopterBlades = [{ mesh: blade1, axis: "y" }, { mesh: blade2, axis: "y" }];
+    this.helicopterLastShot = 0;
+
+    Sfx.helicopterLoop();
+    this.damage.flashMessage("HÉLICOPTÈRE D'ATTAQUE DÉPLOYÉ");
+    this.pushHud(true);
+  }
+
+  private updateHelicopter(dt: number) {
+    if (!this.helicopterGroup) return;
+    const group = this.helicopterGroup;
+
+    // Circle the map
+    const radius = 25;
+    const speed = 0.3;
+    const angle = this.now * speed;
+    group.position.x = Math.cos(angle) * radius;
+    group.position.z = Math.sin(angle) * radius;
+    group.position.y = 8 + Math.sin(this.now * 0.5) * 0.5;
+    group.lookAt(0, 0, 0);
+
+    // Rotate blades
+    if (this.helicopterBlades) {
+      for (const b of this.helicopterBlades) {
+        b.mesh.rotation.y += dt * 30;
+      }
+    }
+
+    // Shoot at nearest enemy
+    let nearest: PState | null = null;
+    let nearestD = Infinity;
+    for (const a of this.remote.values()) {
+      if (!a.state.alive) continue;
+      const d = Math.hypot(a.state.px - group.position.x, a.state.pz - group.position.z);
+      if (d < nearestD) { nearestD = d; nearest = a.state; }
+    }
+    if (this.lp.alive) {
+      const d = Math.hypot(this.lp.pos.x - group.position.x, this.lp.pos.z - group.position.z);
+      if (d < nearestD && !this.damage.isFriendly("helicopter", this.selfId)) {
+        nearest = null as any; // Don't shoot self
+      }
+    }
+    if (nearest && this.now - this.helicopterLastShot > 0.5) {
+      this.helicopterLastShot = this.now;
+      this.damage.applyDamage(nearest.id, 25, false, this.selfId);
+    }
   }
 
   // ---------------- teardown ----------------
@@ -791,6 +1028,10 @@ export class Game {
       a.view.dispose();
     });
     this.remote.clear();
+    if (this.helicopterGroup) {
+      this.scene.remove(this.helicopterGroup);
+    }
+    Sfx.helicopterLoop(true);
     try {
       this.renderer.dispose();
       this.renderer.domElement.remove();

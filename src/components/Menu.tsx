@@ -19,6 +19,7 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
   const [code, setCode] = useState("");
   const [gameMode, setGameMode] = useState<"ffa" | "tdm">("ffa");
   const [team, setTeam] = useState<"red" | "blue">("red");
+  const [weapon, setWeapon] = useState("ar15");
 
   const start = () => {
     if (connecting) return;
@@ -205,6 +206,38 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                     </div>
                   </Field>
                 )}
+                <Field label="Arme principale">
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { id: "ar15", name: "AR-15", dmg: 28, rpm: 632, range: 120 },
+                      { id: "smg", name: "SMG", dmg: 22, rpm: 800, range: 80 },
+                      { id: "shotgun", name: "Shotgun", dmg: 120, rpm: 60, range: 40 },
+                      { id: "sniper", name: "Sniper", dmg: 95, rpm: 60, range: 200 },
+                      { id: "pistol", name: "Pistol", dmg: 34, rpm: 400, range: 60 },
+                    ].map((w) => (
+                      <button
+                        key={w.id}
+                        onClick={() => setWeapon(w.id)}
+                        className={`rounded-lg p-2 text-center transition ${weapon === w.id ? "bg-amber-500 text-black ring-2 ring-amber-300" : "bg-white/5 text-white/60 hover:bg-white/10"}`}
+                      >
+                        <div className="text-xs font-bold">{w.name.split("-")[0]}</div>
+                        <div className="mt-1 space-y-0.5">
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+                            <div className="h-full rounded-full bg-red-400" style={{ width: `${(w.dmg / 120) * 100}%` }} />
+                          </div>
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+                            <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, w.rpm / 10)}%` }} />
+                          </div>
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
+                            <div className="h-full rounded-full bg-blue-400" style={{ width: `${(w.range / 200) * 100}%` }} />
+                          </div>
+                        </div>
+                        <div className="mt-0.5 text-[8px] font-bold tracking-wider text-white/50">DMG RPM RNG</div>
+                        {weapon === w.id && <div className="text-[10px]">✓</div>}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
                 <Field label={`Bots ennemis : ${bots}`}>
                   <input
                     type="range"

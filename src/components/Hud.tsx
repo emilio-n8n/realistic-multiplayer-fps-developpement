@@ -16,9 +16,12 @@ interface Props {
   onResume: () => void;
   onLeave: () => void;
   onRestart: () => void;
+  onKillstreak?: (type: string) => void;
 }
 
-export default function Hud({ hud, mode, code, status, name, onResume, onLeave, onRestart }: Props) {
+const ABBR: Record<string, string> = { ar15: "AR", smg: "SMG", shotgun: "SG", sniper: "SR", pistol: "PST" };
+
+export default function Hud({ hud, mode, code, status, name, onResume, onLeave, onRestart, onKillstreak }: Props) {
   const [showScore, setShowScore] = useState(false);
   const [muted, setMuted] = useState(!isAudioEnabled());
   const nowRef = useRef(performance.now());
@@ -49,6 +52,20 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
   const showDamageNum = hud.lastDamageDealt > 0 && now - hud.lastDamageDealtTime < 600;
   const hpPct = Math.max(0, Math.min(1, hud.hp / hud.maxHp));
 
+  const flashEnd: number = (hud as any).flashEnd ?? 0;
+  const sprintEnd: number = (hud as any).sprintEnd ?? 0;
+  const weaponIndex: number = (hud as any).weaponIndex ?? 0;
+  const weaponList: string[] = (hud as any).weaponList ?? [];
+  const killstreaksReady: string[] = (hud as any).killstreaksReady ?? [];
+  const uavActive: boolean = (hud as any).uavActive ?? false;
+  const equipmentLethal: string | null = (hud as any).equipmentLethal ?? null;
+  const equipmentTactical: string | null = (hud as any).equipmentTactical ?? null;
+  const minimapPings: { x: number; z: number; time: number }[] = (hud as any).minimapPings ?? [];
+
+  const flashActive = flashEnd > 0 && now < flashEnd;
+  const flashOpacity = flashActive ? Math.min(0.95, ((flashEnd - now) / 2000) * 0.95) : 0;
+  const sprintFlash = sprintEnd > 0 && now - sprintEnd < 300;
+
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-mono text-white">
       <style>{`
@@ -69,6 +86,11 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
         }
       `}</style>
 
+      {/* flashbang overlay */}
+      {flashActive && (
+        <div className="absolute inset-0 z-50" style={{ background: "white", opacity: flashOpacity }} />
+      )}
+
       {/* vignette */}
       <div
         className="absolute inset-0 transition-opacity duration-300"
@@ -84,7 +106,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
 
       {/* crosshair */}
       {hud.alive && !hud.paused && !hud.matchOver && (
-        <Crosshair gap={hud.spread} hit={hitFlash} kill={killFlash} />
+        <Crosshair gap={hud.spread} hit={hitFlash} kill={killFlash} sprint={sprintFlash} />
       )}
 
       {/* damage number popup */}
@@ -124,7 +146,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* radar */}
-      <Radar radar={hud.radar} yaw={hud.yaw} />
+      <Radar radar={hud.radar} yaw={hud.yaw} minimapPings={minimapPings} uavActive={uavActive} now={now} />
 
       {/* top center stats */}
       <div className="absolute left-1/2 top-3 -translate-x-1/2 flex items-center gap-6 rounded-md bg-black/45 px-5 py-1.5 text-sm backdrop-blur">
@@ -175,6 +197,41 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
         })}
       </div>
 
+      {/* killstreak display */}
+      {killstreaksReady.length > 0 && (
+        <div className="absolute bottom-32 left-6 flex gap-1.5">
+          {killstreaksReady.map((s) => (
+            <button
+              key={s}
+              onClick={(e) => { e.stopPropagation(); onKillstreak?.(s); }}
+              className="pointer-events-auto animate-pulse rounded border border-amber-500/40 bg-amber-500/20 px-2 py-1 text-xs text-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.2)] hover:bg-amber-500/30"
+            >
+              {s === "uav" ? "UAV" : s === "airstrike" ? "FRA" : s === "helicopter" ? "HEL" : s.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* equipment indicator */}
+      {(equipmentLethal || equipmentTactical) && (
+        <div className="absolute bottom-32 right-6 flex flex-col gap-1 text-xs">
+          {equipmentLethal && (
+            <div className="flex items-center gap-1.5 rounded bg-black/50 px-2 py-1">
+              <span className="text-white/40">[G]</span>
+              <span>💣</span>
+              <span className="text-white/70">{equipmentLethal.toUpperCase()}</span>
+            </div>
+          )}
+          {equipmentTactical && (
+            <div className="flex items-center gap-1.5 rounded bg-black/50 px-2 py-1">
+              <span className="text-white/40">[Q]</span>
+              <span>✨</span>
+              <span className="text-white/70">{equipmentTactical.toUpperCase()}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* health */}
       <div className="absolute bottom-6 left-6 w-64">
         <div className="mb-1 flex items-end justify-between">
@@ -199,6 +256,25 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           </div>
         )}
       </div>
+
+      {/* weapon selector */}
+      {weaponList.length > 0 && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 flex gap-1">
+          {weaponList.map((type, i) => (
+            <div
+              key={type}
+              className={`rounded px-3 py-1.5 text-xs ${
+                i === weaponIndex
+                  ? "bg-amber-500 font-bold text-black shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                  : "bg-black/50 text-white/60"
+              }`}
+            >
+              <div>{ABBR[type] ?? type.toUpperCase()}</div>
+              <div className="text-[10px]">{i === weaponIndex ? `${hud.ammo}/${hud.reserve}` : ""}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* weapon / ammo */}
       <div className="absolute bottom-6 right-6 text-right">
@@ -461,8 +537,8 @@ function Ctl({ k, v }: { k: string; v: string }) {
   );
 }
 
-function Crosshair({ gap, hit, kill }: { gap: number; hit: boolean; kill: boolean }) {
-  const color = kill ? "#f43f5e" : hit ? "#ffffff" : "rgba(255,255,255,0.85)";
+function Crosshair({ gap, hit, kill, sprint }: { gap: number; hit: boolean; kill: boolean; sprint: boolean }) {
+  const color = kill ? "#f43f5e" : sprint ? "#ef4444" : hit ? "#ffffff" : "rgba(255,255,255,0.85)";
   const len = 8;
   const thick = 2;
   return (
@@ -495,13 +571,13 @@ function Crosshair({ gap, hit, kill }: { gap: number; hit: boolean; kill: boolea
   );
 }
 
-function Radar({ radar, yaw }: { radar: HudState["radar"]; yaw?: number }) {
+function Radar({ radar, yaw, minimapPings, uavActive, now }: { radar: HudState["radar"]; yaw?: number; minimapPings?: { x: number; z: number; time: number }[]; uavActive?: boolean; now: number }) {
   const R = 68;
   const range = 45;
   const deg = (yaw ?? 0) * (180 / Math.PI);
   return (
-    <div className="absolute left-4 top-14 h-[150px] w-[150px] rounded-full">
-      <svg width="150" height="150" viewBox="-75 -75 150 150" className="absolute inset-0">
+    <div className={`absolute left-4 top-14 h-[160px] w-[160px] rounded-full ${uavActive ? "ring-2 ring-amber-400/50 animate-pulse" : ""}`}>
+      <svg width="160" height="160" viewBox="-75 -75 150 150" className="absolute inset-0">
         {/* outer compass ring */}
         <circle cx="0" cy="0" r="73" stroke="rgba(255,255,255,0.15)" strokeWidth="2" fill="none" />
         <circle cx="0" cy="0" r="71" stroke="rgba(255,255,255,0.06)" strokeWidth="1" fill="none" />
@@ -552,6 +628,24 @@ function Radar({ radar, yaw }: { radar: HudState["radar"]; yaw?: number }) {
               fill={b.enemy ? (b.firing ? "#ff3b3b" : "rgba(255,120,120,0.7)") : b.firing ? "#3bff3b" : "rgba(120,255,120,0.7)"}
               stroke={b.enemy ? "rgba(255,0,0,0.3)" : "rgba(0,255,0,0.3)"}
               strokeWidth={1}
+            />
+          );
+        })}
+        {/* minimap pings */}
+        {minimapPings?.map((ping, i) => {
+          const age = (now - ping.time) / 1000;
+          const op = Math.max(0, 1 - age / 2);
+          const px = Math.max(-62, Math.min(62, (ping.x / range) * R));
+          const py = Math.max(-62, Math.min(62, -(ping.z / range) * R));
+          return (
+            <circle
+              key={i}
+              cx={px}
+              cy={py}
+              r={4}
+              fill={`rgba(255,50,50,${op * 0.8})`}
+              stroke={`rgba(255,0,0,${op * 0.5})`}
+              strokeWidth={1.5}
             />
           );
         })}

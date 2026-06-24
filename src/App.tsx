@@ -218,6 +218,7 @@ export default function App() {
           onResume={resume}
           onLeave={leave}
           onRestart={handleRestart}
+          onKillstreak={(type) => (gameRef.current as any)?.activateKillstreak?.(type)}
         />
       )}
     </div>
