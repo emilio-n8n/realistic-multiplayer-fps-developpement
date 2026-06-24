@@ -17,6 +17,7 @@ interface Session {
   botCount: number;
   tdm?: boolean;
   team?: "red" | "blue";
+  loadoutIndex?: number;
 }
 
 interface LobbyPeer {
@@ -76,17 +77,17 @@ export default function App() {
     };
   }
 
-  const startSolo = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => {
-    sessionRef.current = { mode: tdm ? "tdm" : "solo", name, color, botCount: bots, tdm, team };
+  const startSolo = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => {
+    sessionRef.current = { mode: tdm ? "tdm" : "solo", name, color, botCount: bots, tdm, team, loadoutIndex };
     setConn({ code: null, status: "Prêt au combat", error: null });
     setLobbyPeers([]);
     setScreen("lobby");
   };
 
-  const startHost = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => {
+  const startHost = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => {
     const net = new Net(lobbyHostCb(tdm));
     netRef.current = net;
-    sessionRef.current = { mode: "host", name, color, botCount: bots, tdm, team };
+    sessionRef.current = { mode: "host", name, color, botCount: bots, tdm, team, loadoutIndex };
     setConn({ code: null, status: "Création de la partie…", error: null });
     setLobbyPeers([]);
     net.host(name);
@@ -161,6 +162,7 @@ export default function App() {
       tdm: session.tdm,
       team: session.team,
       lobbyPeers: lobbyPeersRef.current,
+      loadoutIndex: session.loadoutIndex,
       onHud: setHud,
       onLockChange: () => {},
       onEvent: handleEngineEvent,
@@ -198,6 +200,7 @@ export default function App() {
         peers={lobbyPeers}
         botCount={sessionRef.current?.botCount ?? 0}
         team={sessionRef.current?.team}
+        loadoutName={sessionRef.current?.loadoutIndex !== undefined ? ["Assaut", "Tireur", "Support", "Éclaireur", "Démolisseur"][sessionRef.current.loadoutIndex] : undefined}
         onStart={handleLobbyStart}
         onLeave={leave}
       />

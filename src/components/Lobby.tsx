@@ -6,6 +6,7 @@ interface LobbyPeer {
   color: number;
   team?: "red" | "blue";
   weapon?: string;
+  loadoutName?: string;
 }
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
   peers: LobbyPeer[];
   botCount: number;
   team?: "red" | "blue";
+  loadoutName?: string;
   onStart: () => void;
   onLeave: () => void;
 }
@@ -27,7 +29,7 @@ function hex(c: number) {
 
 const ABBR: Record<string, string> = { ar15: "AR", smg: "SMG", shotgun: "SG", sniper: "SR", pistol: "PST" };
 
-export default function Lobby({ mode, code, status, error, name, peers, botCount, team, onStart, onLeave }: Props) {
+export default function Lobby({ mode, code, status, error, name, peers, botCount, team, loadoutName, onStart, onLeave }: Props) {
   const isHost = mode === "host";
   const isClient = mode === "client";
   const isSolo = mode === "solo";
@@ -132,6 +134,7 @@ export default function Lobby({ mode, code, status, error, name, peers, botCount
                 <div className="flex items-center gap-3 rounded-lg bg-amber-400/10 px-3 py-2 ring-1 ring-amber-400/20">
                   <span className="inline-block h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: hex(COLORS[0]) }} />
                   <span className="font-bold text-amber-200">{name}</span>
+                  {loadoutName && <span className="text-[10px] text-amber-400/60">{loadoutName}</span>}
                   <span className="ml-auto flex items-center gap-2">
                     {team && (
                       <span className={`text-[10px] uppercase tracking-wider ${team === "red" ? "text-red-400" : "text-blue-400"}`}>

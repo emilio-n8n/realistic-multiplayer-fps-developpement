@@ -1,4 +1,4 @@
-import { PLAYER, WEAPON_STATS, KILLSTREAK_DEFS, KILLSTREAK_LIST } from "./types";
+import { WEAPON_STATS, WEAPON_NAMES, KILLSTREAK_DEFS, KILLSTREAK_LIST } from "./types";
 import type { KillstreakType } from "./types";
 import * as Sfx from "./sound";
 import type { Game } from "./engine";
@@ -19,6 +19,7 @@ export class DamageManager {
     const game = this.game;
     if (this.isFriendly(sourceId, targetId)) return false;
     if (targetId === game.selfId) {
+      if (game.activePerks.includes("tank")) dmg = Math.round(dmg * 0.9);
       this.takeDamage(dmg, sourceId, head);
       return !game.lp.alive;
     }
@@ -67,6 +68,23 @@ export class DamageManager {
       game.lp.killstreak++;
       game.streakKills++;
       this.checkKillstreakUnlocks();
+
+      // Weapon XP
+      const wt = game.weaponSystem.weaponType;
+      const wp = game.weaponXp[wt];
+      const xpGain = 10 + (head ? 5 : 0);
+      wp.xp += xpGain;
+      wp.kills++;
+      if (head) wp.headshots++;
+      game.playerXp += xpGain;
+      game.playerLevel = Math.floor(game.playerXp / 100) + 1;
+      // Check weapon level up
+      if (wp.xp >= wp.xpToNext) {
+        wp.level++;
+        wp.xp -= wp.xpToNext;
+        wp.xpToNext = wp.level * 100;
+        this.flashMessage(`NIVEAU ${wp.level} — ${WEAPON_NAMES[wt]}`);
+      }
     } else {
       const s = game.netState.get(sourceId);
       if (s) {
@@ -184,7 +202,7 @@ export class DamageManager {
       const sp = game.pickSpawn(lp.pos, game.tdm ? game.selfTeam : undefined);
       lp.pos.copy(sp);
     }
-    lp.hp = PLAYER.maxHp;
+    lp.hp = lp.maxHp;
     lp.alive = true;
     lp.vel.set(0, 0, 0);
     lp.vy = 0;

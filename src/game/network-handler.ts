@@ -33,6 +33,7 @@ export class NetHandler {
             hp: 100, alive: true, isBot: false, firing: false,
             kills: 0, deaths: 0, killstreak: 0, respawnAt: 0, lastHurt: -99,
             team: game.tdm ? team : "red",
+            loadoutIndex: 0,
           };
           game.netState.set(id, st);
           const welcome: Record<string, unknown> = { t: "welcome", you: id, players: this.snapshot() };
@@ -208,6 +209,7 @@ export class NetHandler {
       respawnAt: lp.respawnAt,
       lastHurt: lp.lastHurt,
       team: game.selfTeam,
+      loadoutIndex: game.loadoutIndex,
     });
     lp.firingTick = false;
   }
@@ -239,7 +241,7 @@ export class NetHandler {
     }
   }
 
-  registerLobbyPeer(id: string, name: string, color: number, team?: "red" | "blue") {
+  registerLobbyPeer(id: string, name: string, color: number, team?: "red" | "blue", loadoutIndex?: number) {
     const game = this.game;
     if (game.mode !== "host") return;
     const t = game.tdm ? (team || game.assignTeam()) : "red";
@@ -250,6 +252,7 @@ export class NetHandler {
       hp: 100, alive: true, isBot: false, firing: false,
       kills: 0, deaths: 0, killstreak: 0, respawnAt: 0, lastHurt: -99,
       team: game.tdm ? t : "red",
+      loadoutIndex: loadoutIndex ?? 0,
     };
     game.netState.set(id, st);
     game.ensureActor(st);

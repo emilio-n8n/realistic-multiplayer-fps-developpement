@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { COLORS } from "../game/types";
+import { COLORS, DEFAULT_LOADOUTS, PERK_DEFS, WEAPON_NAMES } from "../game/types";
 
 interface Props {
-  onStartSolo: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => void;
-  onHost: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => void;
+  onStartSolo: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
+  onHost: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
   onJoin: (name: string, color: number, code: string) => void;
   error: string | null;
   connecting: boolean;
@@ -19,12 +19,12 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
   const [code, setCode] = useState("");
   const [gameMode, setGameMode] = useState<"ffa" | "tdm">("ffa");
   const [team, setTeam] = useState<"red" | "blue">("red");
-  const [weapon, setWeapon] = useState("ar15");
+  const [loadoutIndex, setLoadoutIndex] = useState(0);
 
   const start = () => {
     if (connecting) return;
-    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots, gameMode === "tdm", team);
-    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots, gameMode === "tdm", team);
+    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots, gameMode === "tdm", team, loadoutIndex);
+    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots, gameMode === "tdm", team, loadoutIndex);
     else onJoin(name.trim() || "Joueur", color, code.trim().toUpperCase());
   };
 
@@ -206,34 +206,26 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                     </div>
                   </Field>
                 )}
-                <Field label="Arme principale">
+                <Field label="Classe">
                   <div className="grid grid-cols-5 gap-1.5">
-                    {[
-                      { id: "ar15", name: "AR-15", dmg: 28, rpm: 632, range: 120 },
-                      { id: "smg", name: "SMG", dmg: 22, rpm: 800, range: 80 },
-                      { id: "shotgun", name: "Shotgun", dmg: 120, rpm: 60, range: 40 },
-                      { id: "sniper", name: "Sniper", dmg: 95, rpm: 60, range: 200 },
-                      { id: "pistol", name: "Pistol", dmg: 34, rpm: 400, range: 60 },
-                    ].map((w) => (
+                    {DEFAULT_LOADOUTS.map((loadout, i) => (
                       <button
-                        key={w.id}
-                        onClick={() => setWeapon(w.id)}
-                        className={`rounded-lg p-2 text-center transition ${weapon === w.id ? "bg-amber-500 text-black ring-2 ring-amber-300" : "bg-white/5 text-white/60 hover:bg-white/10"}`}
+                        key={i}
+                        onClick={() => setLoadoutIndex(i)}
+                        className={`rounded-lg p-2 text-center transition ${
+                          loadoutIndex === i
+                            ? "bg-amber-500 text-black ring-2 ring-amber-300 shadow-[0_0_10px_rgba(251,191,36,0.4)]"
+                            : "bg-white/5 text-white/60 hover:bg-white/10"
+                        }`}
                       >
-                        <div className="text-xs font-bold">{w.name.split("-")[0]}</div>
-                        <div className="mt-1 space-y-0.5">
-                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-                            <div className="h-full rounded-full bg-red-400" style={{ width: `${(w.dmg / 120) * 100}%` }} />
-                          </div>
-                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-                            <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, w.rpm / 10)}%` }} />
-                          </div>
-                          <div className="h-1 w-full overflow-hidden rounded-full bg-white/20">
-                            <div className="h-full rounded-full bg-blue-400" style={{ width: `${(w.range / 200) * 100}%` }} />
-                          </div>
+                        <div className="text-[10px] font-bold">{loadout.name}</div>
+                        <div className="mt-1 text-[9px] text-white/50">{WEAPON_NAMES[loadout.primary]}</div>
+                        <div className="text-[9px] text-white/40">{WEAPON_NAMES[loadout.secondary]}</div>
+                        <div className="mt-1 flex justify-center gap-0.5">
+                          {loadout.perks.map((p) => (
+                            <span key={p} className="text-base">{PERK_DEFS[p].icon}</span>
+                          ))}
                         </div>
-                        <div className="mt-0.5 text-[8px] font-bold tracking-wider text-white/50">DMG RPM RNG</div>
-                        {weapon === w.id && <div className="text-[10px]">✓</div>}
                       </button>
                     ))}
                   </div>

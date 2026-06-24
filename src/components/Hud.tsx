@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { HudState } from "../game/types";
+import type { HudState, PerkType } from "../game/types";
+import { PERK_DEFS } from "../game/types";
 import type { GameMode } from "../game/engine";
 import { isAudioEnabled, setAudioEnabled } from "../game/sound";
 
@@ -61,6 +62,10 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
   const equipmentLethal: string | null = (hud as any).equipmentLethal ?? null;
   const equipmentTactical: string | null = (hud as any).equipmentTactical ?? null;
   const minimapPings: { x: number; z: number; time: number }[] = (hud as any).minimapPings ?? [];
+  const loadoutName: string = (hud as any).loadoutName ?? "";
+  const perks: PerkType[] = (hud as any).perks ?? [];
+  const weaponProgression = (hud as any).weaponProgression ?? null;
+  const playerLevel: number = (hud as any).playerLevel ?? 1;
 
   const flashActive = flashEnd > 0 && now < flashEnd;
   const flashOpacity = flashActive ? Math.min(0.95, ((flashEnd - now) / 2000) * 0.95) : 0;
@@ -168,6 +173,8 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           <span className="rounded bg-amber-500/80 px-2 py-0.5 text-xs font-bold text-black">SÉRIE x{hud.killstreak}</span>
         )}
         <span className="text-white/60">{hud.playerCount} joueur{hud.playerCount > 1 ? "s" : ""}</span>
+        <span className="text-purple-400/80 text-xs">Niv.{playerLevel}</span>
+        {loadoutName && <span className="text-white/40 text-[10px]">{loadoutName}</span>}
         {hud.tdm && (
           <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
             hud.team === "red" ? "bg-red-500/30 text-red-300" : "bg-blue-500/30 text-blue-300"
@@ -233,6 +240,13 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* health */}
+      {perks.length > 0 && (
+        <div className="absolute bottom-6 left-[280px] flex gap-1 items-end pb-1">
+          {perks.map((p) => (
+            <span key={p} className="text-lg drop-shadow-[0_0_4px_rgba(0,0,0,0.8)]" title={PERK_DEFS[p].description}>{PERK_DEFS[p].icon}</span>
+          ))}
+        </div>
+      )}
       <div className="absolute bottom-6 left-6 w-64">
         <div className="mb-1 flex items-end justify-between">
           <span className="text-xs uppercase tracking-widest text-white/60">Santé</span>
@@ -275,6 +289,19 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           ))}
         </div>
       )}
+
+      {/* weapon XP bar */}
+      {weaponProgression && weaponProgression[hud.weaponType] && (() => {
+        const wp = weaponProgression[hud.weaponType];
+        return (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-64">
+            <div className="h-1 bg-black/60 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-400 transition-all duration-200" style={{ width: `${(wp.xp / wp.xpToNext) * 100}%` }} />
+            </div>
+            <div className="text-[9px] text-white/40 text-center mt-0.5">Niv.{wp.level}</div>
+          </div>
+        );
+      })()}
 
       {/* weapon / ammo */}
       <div className="absolute bottom-6 right-6 text-right">

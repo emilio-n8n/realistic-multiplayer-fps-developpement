@@ -57,6 +57,8 @@ export class LocalPlayerManager {
     else if (sprinting) speed *= PLAYER.sprintMult;
     else if (lp.crouch && !lp.sliding) speed *= PLAYER.crouchMult;
     if (lp.ads) speed *= PLAYER.adsSpeedMult;
+    if (sprinting && game.activePerks.includes("scout")) speed *= 1.2;
+    if (game.activePerks.includes("ninja")) speed *= 1.2;
 
     const targetVx = (dirX / len) * speed * (moving ? 1 : 0);
     const targetVz = (dirZ / len) * speed * (moving ? 1 : 0);
@@ -83,13 +85,13 @@ export class LocalPlayerManager {
       const interval = sprinting ? 0.32 : 0.48;
       if (game.now - lp.lastStep > interval) {
         lp.lastStep = game.now;
-        Sfx.footstep(sprinting);
+        if (!game.activePerks.includes("ninja")) Sfx.footstep(sprinting);
       }
       game.bob += dt * (sprinting ? 16 : 11);
     }
 
-    if (game.mode !== "client" && lp.alive && game.now - lp.lastHurt > PLAYER.regenDelay && lp.hp < PLAYER.maxHp) {
-      const regenMax = lp.hp <= PLAYER.bleedThreshold ? PLAYER.bleedMaxRegen : PLAYER.maxHp;
+    if (game.mode !== "client" && lp.alive && game.now - lp.lastHurt > PLAYER.regenDelay && lp.hp < lp.maxHp) {
+      const regenMax = lp.hp <= PLAYER.bleedThreshold ? PLAYER.bleedMaxRegen : lp.maxHp;
       lp.hp = Math.min(regenMax, lp.hp + PLAYER.regenRate * dt);
     }
 

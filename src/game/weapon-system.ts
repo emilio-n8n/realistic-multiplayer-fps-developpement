@@ -43,7 +43,7 @@ export class WeaponSystem {
     this.reserve[this.swapping ? this.swappingFrom : this.weaponIndex] = lp.reserve;
   }
 
-  private loadAmmo() {
+  loadAmmo() {
     const lp = this.game.lp;
     lp.ammo = this.ammo[this.weaponIndex];
     lp.reserve = this.reserve[this.weaponIndex];
@@ -315,7 +315,8 @@ export class WeaponSystem {
     if (lp.reloading || !lp.alive) return;
     if (lp.ammo >= stats.magSize || lp.reserve <= 0) return;
     lp.reloading = true;
-    lp.reloadEnd = game.now + stats.reloadTime;
+    const reloadTime = game.activePerks.includes("gunner") ? stats.reloadTime * 0.7 : stats.reloadTime;
+    lp.reloadEnd = game.now + reloadTime;
     Sfx.reloadSound();
     game.pushHud(true);
   }

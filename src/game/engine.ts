@@ -5,8 +5,8 @@ import { buildWeaponView } from "./weapon";
 import type { WeaponView } from "./weapon";
 import { makeCharacter } from "./character";
 import type { CharacterView } from "./character";
-import { COLORS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
-import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType } from "./types";
+import { COLORS, DEFAULT_LOADOUTS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
+import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData } from "./types";
 import * as Sfx from "./sound";
 import type { Net } from "../net/net";
 import { LocalPlayerManager } from "./local-player";
@@ -27,7 +27,8 @@ export interface GameOpts {
   net?: Net | null;
   tdm?: boolean;
   team?: "red" | "blue";
-  lobbyPeers?: { id: string; name: string; color: number; team?: "red" | "blue" }[];
+  lobbyPeers?: { id: string; name: string; color: number; team?: "red" | "blue"; loadoutIndex?: number }[];
+  loadoutIndex?: number;
   onHud: (s: HudState) => void;
   onLockChange: (locked: boolean) => void;
   onEvent: (e: { type: string; data?: unknown }) => void;
@@ -77,6 +78,7 @@ export class Game {
     yaw: 0,
     pitch: 0,
     hp: PLAYER.maxHp,
+    maxHp: PLAYER.maxHp,
     alive: true,
     onGround: true,
     crouch: false,
@@ -185,6 +187,13 @@ export class Game {
   killstreaksReady: KillstreakType[] = [];
   streakKills = 0;
 
+  // loadout / perks / progression
+  loadoutIndex = 0;
+  activePerks: PerkType[] = [];
+  weaponXp: WeaponProgressionData;
+  playerXp = 0;
+  playerLevel = 1;
+
   // sub-managers
   localPlayer: LocalPlayerManager;
   weaponSystem: WeaponSystem;
@@ -222,6 +231,30 @@ export class Game {
     this.netHandler = new NetHandler(this);
     this.equipment = new EquipmentSystem(this);
 
+    // Init weapon progression
+    this.weaponXp = {} as WeaponProgressionData;
+    for (const w of WEAPON_LIST) {
+      this.weaponXp[w] = { level: 1, xp: 0, xpToNext: 100, kills: 0, headshots: 0 };
+    }
+
+    // Apply loadout
+    this.loadoutIndex = opts.loadoutIndex ?? 0;
+    const loadout = DEFAULT_LOADOUTS[this.loadoutIndex];
+    this.activePerks = loadout.perks;
+    this.equipmentLethal = loadout.lethal;
+    this.equipmentTactical = loadout.tactical;
+    if (this.activePerks.includes("tank")) {
+      this.lp.maxHp = PLAYER.maxHp + 25;
+      this.lp.hp = this.lp.maxHp;
+    }
+    // Set weapon system to loadout primary
+    const primaryIdx = WEAPON_LIST.indexOf(loadout.primary);
+    if (primaryIdx >= 0) {
+      this.weaponSystem.weaponIndex = primaryIdx;
+      this.weaponSystem.weaponType = loadout.primary;
+      this.weaponSystem.loadAmmo();
+    }
+
     this.initScene();
     this.initMap();
     this.initWeapon();
@@ -234,7 +267,7 @@ export class Game {
     if (this.net) this.netHandler.attachNet();
     if (opts.lobbyPeers) {
       for (const p of opts.lobbyPeers) {
-        this.netHandler.registerLobbyPeer(p.id, p.name, p.color, p.team);
+        this.netHandler.registerLobbyPeer(p.id, p.name, p.color, p.team, p.loadoutIndex);
       }
     }
   }
@@ -304,7 +337,7 @@ export class Game {
   }
 
   private initWeapon() {
-    this.weapon = buildWeaponView("ar15");
+    this.weapon = buildWeaponView(this.weaponSystem.weaponType);
     this.weapon.group.position.set(0.17, -0.15, -0.42);
     this.weapon.group.rotation.y = Math.PI;
     this.camera.add(this.weapon.group);
@@ -598,7 +631,7 @@ export class Game {
     const ws = WEAPON_STATS[this.weaponSystem.weaponType];
     const state: HudState = {
       hp: Math.round(hp),
-      maxHp: PLAYER.maxHp,
+      maxHp: this.lp.maxHp,
       alive,
       ammo: lp.ammo,
       mag: ws.magSize,
@@ -644,6 +677,10 @@ export class Game {
       equipmentLethal: this.equipmentLethal,
       equipmentTactical: this.equipmentTactical,
       minimapPings: pings,
+      loadoutName: DEFAULT_LOADOUTS[this.loadoutIndex].name,
+      perks: this.activePerks,
+      weaponProgression: this.weaponXp,
+      playerLevel: this.playerLevel,
     };
     this.onHud(state);
   }
@@ -674,7 +711,8 @@ export class Game {
       const d = Math.hypot(dx, dz);
       if (d > 45) continue;
       const isEnemy = this.tdm ? !this.damage.isFriendly(this.selfId, p.id) : true;
-      if (isEnemy && !p.firing && d > 12 && !this.uavActive) continue;
+      const scoutPerk = this.activePerks.includes("scout");
+      if (isEnemy && !p.firing && d > 12 && !this.uavActive && !scoutPerk) continue;
       const f = dx * fwd.x + dz * fwd.z;
       const r = dx * right.x + dz * right.z;
       blips.push({ x: r, z: f, enemy: isEnemy, firing: p.firing });
@@ -825,14 +863,14 @@ export class Game {
       }
     }
 
-    this.lp.hp = PLAYER.maxHp;
+    this.lp.hp = this.lp.maxHp;
     this.lp.alive = true;
     this.lp.kills = 0;
     this.lp.deaths = 0;
     this.lp.killstreak = 0;
     this.lp.respawnAt = 0;
-    this.lp.ammo = WEAPON_STATS.ar15.magSize;
-    this.lp.reserve = WEAPON_STATS.ar15.reserveMax;
+    this.lp.ammo = WEAPON_STATS[this.weaponSystem.weaponType].magSize;
+    this.lp.reserve = WEAPON_STATS[this.weaponSystem.weaponType].reserveMax;
     this.lp.reloading = false;
     this.lp.flashEnd = 0;
     this.streakKills = 0;

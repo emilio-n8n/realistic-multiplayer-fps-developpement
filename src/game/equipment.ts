@@ -374,18 +374,20 @@ export class EquipmentSystem {
 
   grenadeAoeDamage(pos: THREE.Vector3, source: string) {
     const game = this.game;
+    let radius = GRENADE.radius;
+    if (source === game.selfId && game.activePerks.includes("demolition")) radius *= 1.25;
     const dToSelf = game.lp.pos.distanceTo(pos);
-    if (dToSelf < GRENADE.radius) {
+    if (dToSelf < radius) {
       if (!game.damage.isFriendly(source, game.selfId)) {
-        const dmg = Math.round(GRENADE.maxDamage * (1 - dToSelf / GRENADE.radius));
+        const dmg = Math.round(GRENADE.maxDamage * (1 - dToSelf / radius));
         game.damage.takeDamage(Math.max(5, dmg), source, false);
       }
     }
     for (const a of game.remote.values()) {
       if (!a.state.alive) continue;
       const d = new THREE.Vector3(a.state.px, a.state.py + 0.9, a.state.pz).distanceTo(pos);
-      if (d < GRENADE.radius) {
-        const dmg = Math.round(GRENADE.maxDamage * (1 - d / GRENADE.radius));
+      if (d < radius) {
+        const dmg = Math.round(GRENADE.maxDamage * (1 - d / radius));
         game.damage.applyDamage(a.state.id, Math.max(5, dmg), false, source);
       }
     }
@@ -393,8 +395,8 @@ export class EquipmentSystem {
       if (t.id === game.selfId || t.id === source || !t.alive) continue;
       if (t.isBot) {
         const d = new THREE.Vector3(t.px, t.py + 0.9, t.pz).distanceTo(pos);
-        if (d < GRENADE.radius) {
-          const dmg = Math.round(GRENADE.maxDamage * (1 - d / GRENADE.radius));
+        if (d < radius) {
+          const dmg = Math.round(GRENADE.maxDamage * (1 - d / radius));
           game.damage.applyDamage(t.id, Math.max(5, dmg), false, source);
         }
       }

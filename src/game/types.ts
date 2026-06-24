@@ -19,6 +19,7 @@ export interface PState {
   respawnAt?: number;
   lastHurt?: number;
   team: "red" | "blue";
+  loadoutIndex?: number;
 }
 
 export interface KillFeedItem {
@@ -102,6 +103,10 @@ export interface HudState {
   equipmentLethal: EquipmentType | null;
   equipmentTactical: EquipmentType | null;
   minimapPings: { x: number; z: number; time: number }[];
+  loadoutName: string;
+  perks: PerkType[];
+  weaponProgression: WeaponProgressionData;
+  playerLevel: number;
 }
 
 export const WEAPON = {
@@ -232,3 +237,49 @@ export const KILLSTREAK_DEFS: Record<KillstreakType, { name: string; kills: numb
   airstrike: { name: "Airstrike", kills: 5, description: "Calls in an air bombardment" },
   helicopter: { name: "Helicopter", kills: 7, description: "Deploys an attack helicopter" },
 };
+
+// ---------- Perks ----------
+
+export type PerkType = "gunner" | "ninja" | "tank" | "scout" | "demolition";
+
+export interface PerkDef {
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export const PERK_DEFS: Record<PerkType, PerkDef> = {
+  gunner: { name: "Gunner", description: "Rechargement 30% plus rapide", icon: "⚡" },
+  ninja:  { name: "Ninja",  description: "Pas silencieux, 20% plus rapide", icon: "👣" },
+  tank:   { name: "Tank",   description: "HP max +25, dégâts subis -10%", icon: "🛡️" },
+  scout:  { name: "Scout",  description: "Sprint 20% plus rapide, radar permanent", icon: "🔭" },
+  demolition: { name: "Démolition", description: "2 grenades, explosion +25% rayon", icon: "💣" },
+};
+
+export interface Loadout {
+  name: string;
+  primary: WeaponType;
+  secondary: WeaponType;
+  lethal: EquipmentType;
+  tactical: EquipmentType;
+  perks: PerkType[];
+}
+
+export const DEFAULT_LOADOUTS: Loadout[] = [
+  { name: "Assaut",    primary: "ar15",    secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["gunner", "tank"] },
+  { name: "Tireur",    primary: "sniper",  secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["scout", "ninja"] },
+  { name: "Support",   primary: "smg",     secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["tank", "demolition"] },
+  { name: "Éclaireur", primary: "shotgun", secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["ninja", "scout"] },
+  { name: "Démolisseur", primary: "ar15",  secondary: "shotgun", lethal: "frag", tactical: "flash", perks: ["demolition", "gunner"] },
+];
+
+// ---------- Weapon progression ----------
+
+export interface WeaponProgression {
+  level: number;
+  xp: number;
+  xpToNext: number;
+  kills: number;
+  headshots: number;
+}
+export type WeaponProgressionData = Record<WeaponType, WeaponProgression>;
