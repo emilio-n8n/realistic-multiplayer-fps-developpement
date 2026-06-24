@@ -76,6 +76,9 @@ export class NetHandler {
           for (const p of players) this.applyWorldEntry(p);
           if (msg.teamKillsRed !== undefined) game.teamKillsRed = Number(msg.teamKillsRed);
           if (msg.teamKillsBlue !== undefined) game.teamKillsBlue = Number(msg.teamKillsBlue);
+          if (msg.domState) game.domState = msg.domState as any;
+          if (msg.sndState) game.sndState = msg.sndState as any;
+          if (msg.hasBomb !== undefined) game.hasBomb = Boolean(msg.hasBomb);
         }
         break;
       case "me":
@@ -233,9 +236,14 @@ export class NetHandler {
       game.lp.firingTick = false;
     } else {
       this.syncSelfToNet();
-      if (game.mode === "host") {
+      if (game.mode === "host" || game.mode === "dom" || game.mode === "snd") {
         const world: Record<string, unknown> = { t: "world", players: this.snapshot() };
         if (game.tdm) { world.teamKillsRed = game.teamKillsRed; world.teamKillsBlue = game.teamKillsBlue; }
+        if (game.mode === "dom") world.domState = game.domState;
+        if (game.mode === "snd") {
+          world.sndState = game.sndState;
+          world.hasBomb = game.hasBomb;
+        }
         game.net?.broadcast(world as NetMsg);
       }
     }

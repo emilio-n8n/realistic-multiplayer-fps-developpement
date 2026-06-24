@@ -2,8 +2,8 @@ import { useState } from "react";
 import { COLORS, DEFAULT_LOADOUTS, PERK_DEFS, WEAPON_NAMES } from "../game/types";
 
 interface Props {
-  onStartSolo: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
-  onHost: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
+  onStartSolo: (name: string, color: number, bots: number, gameMode: string, hardcore: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
+  onHost: (name: string, color: number, bots: number, gameMode: string, hardcore: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
   onJoin: (name: string, color: number, code: string) => void;
   error: string | null;
   connecting: boolean;
@@ -17,14 +17,17 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
   const [color, setColor] = useState(COLORS[0]);
   const [bots, setBots] = useState(6);
   const [code, setCode] = useState("");
-  const [gameMode, setGameMode] = useState<"ffa" | "tdm">("ffa");
+  const [gameMode, setGameMode] = useState<"ffa" | "tdm" | "dom" | "snd">("ffa");
+  const [hardcore, setHardcore] = useState(false);
   const [team, setTeam] = useState<"red" | "blue">("red");
   const [loadoutIndex, setLoadoutIndex] = useState(0);
 
+  const isTeamMode = gameMode === "tdm" || gameMode === "dom" || gameMode === "snd";
+
   const start = () => {
     if (connecting) return;
-    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots, gameMode === "tdm", team, loadoutIndex);
-    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots, gameMode === "tdm", team, loadoutIndex);
+    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots, gameMode, hardcore, team, loadoutIndex);
+    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots, gameMode, hardcore, team, loadoutIndex);
     else onJoin(name.trim() || "Joueur", color, code.trim().toUpperCase());
   };
 
@@ -165,26 +168,36 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
               ) : (
                 <>
                 <Field label="Mode de jeu">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setGameMode("ffa")}
-                      className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
-                        gameMode === "ffa" ? "bg-amber-500 text-black" : "bg-white/5 text-white/60 hover:bg-white/10"
-                      }`}
-                    >
-                      FFA
-                    </button>
-                    <button
-                      onClick={() => setGameMode("tdm")}
-                      className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
-                        gameMode === "tdm" ? "bg-amber-500 text-black" : "bg-white/5 text-white/60 hover:bg-white/10"
-                      }`}
-                    >
-                      TDM
-                    </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ["ffa", "FFA"],
+                      ["tdm", "TDM"],
+                      ["dom", "Domination"],
+                      ["snd", "Search & Destroy"],
+                    ] as [string, string][]).map(([id, label]) => (
+                      <button
+                        key={id}
+                        onClick={() => setGameMode(id as any)}
+                        className={`rounded-lg py-2 text-sm font-bold transition ${
+                          gameMode === id ? "bg-amber-500 text-black" : "bg-white/5 text-white/60 hover:bg-white/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </Field>
-                {gameMode === "tdm" && (
+                {gameMode === "snd" && (
+                  <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300/80 ring-1 ring-amber-500/20">
+                    Pose / désamorce la bombe. Pas de réapparition. 4 manches pour gagner.
+                  </div>
+                )}
+                {gameMode === "dom" && (
+                  <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300/80 ring-1 ring-amber-500/20">
+                    Capture et défends 3 points. 100 points pour gagner.
+                  </div>
+                )}
+                {isTeamMode && (
                   <Field label="Équipe">
                     <div className="flex gap-2">
                       <button
@@ -244,6 +257,22 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                     <span>{tab === "host" ? "Remplissent la map en attente de joueurs" : "Entraînement"}</span>
                     <span>10</span>
                   </div>
+                </Field>
+                <Field label="">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hardcore}
+                      onChange={(e) => setHardcore(e.target.checked)}
+                      className="accent-amber-500 w-4 h-4"
+                    />
+                    <span className="text-sm font-bold text-white/80">Mode Hardcore</span>
+                  </label>
+                  {hardcore && (
+                    <div className="mt-1.5 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300/80 ring-1 ring-rose-500/20">
+                      Dégâts x3, pas de HUD, friendly fire activé
+                    </div>
+                  )}
                 </Field>
               </>
               )}

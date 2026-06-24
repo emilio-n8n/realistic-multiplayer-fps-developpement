@@ -18,6 +18,7 @@ interface Session {
   tdm?: boolean;
   team?: "red" | "blue";
   loadoutIndex?: number;
+  hardcore?: boolean;
 }
 
 interface LobbyPeer {
@@ -51,7 +52,7 @@ export default function App() {
   }, []);
 
   // factory for host lobby callbacks
-  function lobbyHostCb(tdm: boolean = false): NetCallbacks {
+  function lobbyHostCb(isTeamMode: boolean = false): NetCallbacks {
     return {
       onStatus: (s) => setConn((c) => ({ ...c, status: s })),
       onCodeReady: (code) => setConn((c) => ({ ...c, code })),
@@ -60,7 +61,7 @@ export default function App() {
         const color = COLORS[Math.floor(Math.random() * COLORS.length)];
         setLobbyPeers((prev) => {
           let team: "red" | "blue" | undefined;
-          if (tdm) {
+          if (isTeamMode) {
             const hostTeam = sessionRef.current?.team ?? "red";
             const redCount = prev.filter(p => p.team === "red").length + (hostTeam === "red" ? 1 : 0);
             const blueCount = prev.filter(p => p.team === "blue").length + (hostTeam === "blue" ? 1 : 0);
@@ -77,17 +78,21 @@ export default function App() {
     };
   }
 
-  const startSolo = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => {
-    sessionRef.current = { mode: tdm ? "tdm" : "solo", name, color, botCount: bots, tdm, team, loadoutIndex };
+  const startSolo = (name: string, color: number, bots: number, gameMode: string, hardcore: boolean, team: "red" | "blue", loadoutIndex?: number) => {
+    const mode = (gameMode === "ffa" ? "solo" : gameMode) as GameMode;
+    const isTeamMode = mode === "tdm" || mode === "dom" || mode === "snd";
+    sessionRef.current = { mode, name, color, botCount: bots, tdm: isTeamMode, team, loadoutIndex, hardcore };
     setConn({ code: null, status: "Prêt au combat", error: null });
     setLobbyPeers([]);
     setScreen("lobby");
   };
 
-  const startHost = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue", loadoutIndex?: number) => {
-    const net = new Net(lobbyHostCb(tdm));
+  const startHost = (name: string, color: number, bots: number, gameMode: string, hardcore: boolean, team: "red" | "blue", loadoutIndex?: number) => {
+    const mode = (gameMode === "ffa" ? "solo" : gameMode) as GameMode;
+    const isTeamMode = mode === "tdm" || mode === "dom" || mode === "snd";
+    const net = new Net(lobbyHostCb(isTeamMode));
     netRef.current = net;
-    sessionRef.current = { mode: "host", name, color, botCount: bots, tdm, team, loadoutIndex };
+    sessionRef.current = { mode: "host", name, color, botCount: bots, tdm: isTeamMode, team, loadoutIndex, hardcore };
     setConn({ code: null, status: "Création de la partie…", error: null });
     setLobbyPeers([]);
     net.host(name);
@@ -163,6 +168,7 @@ export default function App() {
       team: session.team,
       lobbyPeers: lobbyPeersRef.current,
       loadoutIndex: session.loadoutIndex,
+      hardcore: session.hardcore,
       onHud: setHud,
       onLockChange: () => {},
       onEvent: handleEngineEvent,

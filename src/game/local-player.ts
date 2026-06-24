@@ -10,7 +10,7 @@ export class LocalPlayerManager {
     const game = this.game;
     const lp = game.lp;
     if (!lp.alive) {
-      if (game.mode !== "client" && game.now >= lp.respawnAt) game.damage.handleSelfRespawn(false);
+      if (game.mode !== "client" && game.mode !== "snd" && game.now >= lp.respawnAt) game.damage.handleSelfRespawn(false);
       return;
     }
 

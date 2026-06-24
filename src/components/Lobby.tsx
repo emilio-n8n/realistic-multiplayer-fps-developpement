@@ -10,7 +10,7 @@ interface LobbyPeer {
 }
 
 interface Props {
-  mode: "solo" | "host" | "client" | "tdm";
+  mode: "solo" | "host" | "client" | "tdm" | "dom" | "snd";
   code: string | null;
   status: string;
   error: string | null;

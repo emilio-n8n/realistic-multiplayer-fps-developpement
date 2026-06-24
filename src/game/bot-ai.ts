@@ -46,7 +46,7 @@ export class BotManager {
     if (decide) game.botAccum = 0;
 
     for (const p of game.netState.values()) {
-      if (p.id !== game.selfId && !p.isBot && !p.alive && game.now >= (p.respawnAt ?? 0)) {
+      if (p.id !== game.selfId && !p.isBot && !p.alive && game.now >= (p.respawnAt ?? 0) && game.mode !== "snd") {
         game.respawnActor(p);
       }
     }
@@ -82,7 +82,7 @@ export class BotManager {
     for (const bot of game.netState.values()) {
       if (!bot.isBot) continue;
       if (!bot.alive) {
-        if (game.now >= (bot.respawnAt ?? 0)) game.respawnActor(bot);
+        if (game.now >= (bot.respawnAt ?? 0) && game.mode !== "snd") game.respawnActor(bot);
         continue;
       }
 

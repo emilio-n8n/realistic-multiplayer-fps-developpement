@@ -6,7 +6,7 @@ import type { WeaponView } from "./weapon";
 import { makeCharacter } from "./character";
 import type { CharacterView } from "./character";
 import { COLORS, DEFAULT_LOADOUTS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
-import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData } from "./types";
+import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData, DomState, SndState, HardcoreSettings } from "./types";
 import * as Sfx from "./sound";
 import type { Net } from "../net/net";
 import { LocalPlayerManager } from "./local-player";
@@ -17,7 +17,7 @@ import { FxManager } from "./fx";
 import { NetHandler } from "./network-handler";
 import { EquipmentSystem } from "./equipment";
 
-export type GameMode = "solo" | "host" | "client" | "tdm";
+export type GameMode = "solo" | "host" | "client" | "tdm" | "dom" | "snd";
 
 export interface GameOpts {
   mode: GameMode;
@@ -32,6 +32,7 @@ export interface GameOpts {
   onHud: (s: HudState) => void;
   onLockChange: (locked: boolean) => void;
   onEvent: (e: { type: string; data?: unknown }) => void;
+  hardcore?: boolean;
 }
 
 interface RemoteActor {
@@ -194,6 +195,29 @@ export class Game {
   playerXp = 0;
   playerLevel = 1;
 
+  // Domination state
+  domState: DomState = { points: [], scoreRed: 0, scoreBlue: 0, scoreLimit: 100 };
+  capPointNear: string | null = null;
+  capProgress: number = 0;
+  domScoreAccum: number = 0;
+  capPointMeshes: { group: THREE.Group; base: THREE.Mesh; flag: THREE.Mesh; ring: THREE.Mesh }[] = [];
+
+  // S&D state
+  sndState: SndState = { round: 1, phase: "prep", phaseTimer: 0, attackingTeam: "red", bombPlanted: false, bombSite: null, bombTimer: 0, teamScoreRed: 0, teamScoreBlue: 0, roundsToWin: 4, aliveRed: 0, aliveBlue: 0 };
+  hasBomb: boolean = false;
+  planting: boolean = false;
+  defusing: boolean = false;
+  plantProgress: number = 0;
+  defuseProgress: number = 0;
+  sndBombPos: THREE.Vector3 | null = null;
+  sndPlantSite: "a" | "b" | null = null;
+  bombSiteMeshes: THREE.Mesh[] = [];
+  bombPlantedMesh: THREE.Mesh | null = null;
+  sndBombIcon: THREE.Mesh | null = null;
+
+  // Hardcore state
+  hardcore: HardcoreSettings = { enabled: false, hpMultiplier: 1, friendlyFire: false, noHud: false, noCrosshair: false, noRadar: false, headshotOnly: false };
+
   // sub-managers
   localPlayer: LocalPlayerManager;
   weaponSystem: WeaponSystem;
@@ -212,7 +236,7 @@ export class Game {
   constructor(container: HTMLElement, opts: GameOpts) {
     this.container = container;
     this.mode = opts.mode;
-    this.tdm = opts.mode === "tdm" || opts.tdm === true;
+    this.tdm = opts.mode === "tdm" || opts.tdm === true || opts.mode === "dom" || opts.mode === "snd";
     this.selfTeam = opts.team || "red";
     this.net = opts.net ?? null;
     this.onHud = opts.onHud;
@@ -255,15 +279,69 @@ export class Game {
       this.weaponSystem.loadAmmo();
     }
 
+    // Domination mode init
+    if (this.mode === "dom") {
+      this.domState = {
+        points: [
+          { id: "a", x: -10, z: -10, radius: 4, team: null, progress: 0, contesting: false },
+          { id: "b", x: 0, z: 0, radius: 4, team: null, progress: 0, contesting: false },
+          { id: "c", x: 10, z: 10, radius: 4, team: null, progress: 0, contesting: false },
+        ],
+        scoreRed: 0,
+        scoreBlue: 0,
+        scoreLimit: 100,
+      };
+      this.domScoreAccum = 0;
+    }
+
+    // S&D mode init
+    if (this.mode === "snd") {
+      this.sndState = {
+        round: 1,
+        phase: "prep",
+        phaseTimer: 15,
+        attackingTeam: "red",
+        bombPlanted: false,
+        bombSite: null,
+        bombTimer: 0,
+        teamScoreRed: 0,
+        teamScoreBlue: 0,
+        roundsToWin: 4,
+        aliveRed: 0,
+        aliveBlue: 0,
+      };
+      this.plantProgress = 0;
+      this.defuseProgress = 0;
+      this.planting = false;
+      this.defusing = false;
+      this.sndBombPos = null;
+    }
+
+    // Hardcore mode
+    if (opts.hardcore) {
+      this.hardcore = {
+        enabled: true,
+        hpMultiplier: 0.3,
+        friendlyFire: true,
+        noHud: true,
+        noCrosshair: true,
+        noRadar: true,
+        headshotOnly: false,
+      };
+      this.lp.maxHp = Math.round(PLAYER.maxHp * 0.3);
+      this.lp.hp = this.lp.maxHp;
+    }
+
     this.initScene();
     this.initMap();
     this.initWeapon();
     this.bindInput();
 
-    if (this.mode === "solo" || this.mode === "host" || this.mode === "tdm") {
+    if (this.mode === "solo" || this.mode === "host" || this.mode === "tdm" || this.mode === "dom" || this.mode === "snd") {
       this.initBots(opts.botCount);
       this.netHandler.syncSelfToNet();
     }
+    if (this.mode === "snd") this.startSndRound();
     if (this.net) this.netHandler.attachNet();
     if (opts.lobbyPeers) {
       for (const p of opts.lobbyPeers) {
@@ -311,6 +389,52 @@ export class Game {
     this.scene.add(sun);
     const amb = new THREE.AmbientLight(0xffffff, 0.25);
     this.scene.add(amb);
+
+    // Capture point visuals (Domination)
+    if (this.mode === "dom") {
+      for (const p of this.domState.points) {
+        const group = new THREE.Group();
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.35 });
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(p.radius, p.radius, 0.15, 24), baseMat);
+        base.position.set(p.x, 0.075, p.z);
+        base.receiveShadow = true;
+        group.add(base);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 6), new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+        pole.position.set(p.x, 0.82, p.z);
+        group.add(pole);
+        const flagMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+        const flag = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), flagMat);
+        flag.position.set(p.x, 1.6, p.z);
+        group.add(flag);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(p.radius * 0.3, p.radius * 0.35, 24), ringMat);
+        ring.position.set(p.x, 0.2, p.z);
+        ring.rotation.x = -Math.PI / 2;
+        group.add(ring);
+        this.scene.add(group);
+        this.capPointMeshes.push({ group, base, flag, ring });
+      }
+    }
+
+    // Bomb site markers (S&D)
+    if (this.mode === "snd") {
+      const sitePositions = [[-10, 10], [10, -10]];
+      for (let i = 0; i < 2; i++) {
+        const [sx, sz] = sitePositions[i];
+        const siteMat = new THREE.MeshStandardMaterial({ color: 0xff6600, transparent: true, opacity: 0.2 });
+        const siteMesh = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), siteMat);
+        siteMesh.position.set(sx, 0.05, sz);
+        siteMesh.receiveShadow = true;
+        this.scene.add(siteMesh);
+        this.bombSiteMeshes.push(siteMesh);
+        // Label sphere
+        const labelMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.3 });
+        const label = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), labelMat);
+        label.position.set(sx, 2, sz);
+        this.scene.add(label);
+        this.bombSiteMeshes.push(label);
+      }
+    }
   }
 
   private makeSky() {
@@ -431,9 +555,42 @@ export class Game {
         this.weaponSystem.switchWeapon(idx);
       }
     }
+    // S&D — bomb plant/defuse
+    if (e.code === "KeyF" && this.mode === "snd" && this.sndState.phase === "active" && this.lp.alive) {
+      if (this.sndState.bombPlanted && this.sndBombPos) {
+        const d = this.lp.pos.distanceTo(this.sndBombPos);
+        if (d < 3 && this.selfTeam !== this.sndState.attackingTeam) {
+          this.defusing = true;
+          this.defuseProgress = 0;
+        }
+      } else if (this.hasBomb) {
+        const siteA = new THREE.Vector3(-10, 0, 10);
+        const siteB = new THREE.Vector3(10, 0, -10);
+        const dA = this.lp.pos.distanceTo(siteA);
+        const dB = this.lp.pos.distanceTo(siteB);
+        if (dA < 4) {
+          this.planting = true;
+          this.sndPlantSite = "a";
+          this.plantProgress = 0;
+        } else if (dB < 4) {
+          this.planting = true;
+          this.sndPlantSite = "b";
+          this.plantProgress = 0;
+        }
+      }
+    }
+
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
   };
-  private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
+  private onKeyUp = (e: KeyboardEvent) => {
+    this.keys.delete(e.code);
+    if (e.code === "KeyF") {
+      this.planting = false;
+      this.defusing = false;
+      this.plantProgress = 0;
+      this.defuseProgress = 0;
+    }
+  };
 
   private onMouseDown = (e: MouseEvent) => {
     if (!this.locked) {
@@ -502,6 +659,21 @@ export class Game {
       this.weaponSystem.update(dt);
       if (this.mouseDown) this.weaponSystem.tryFire();
       this.equipment.update(dt);
+      if (this.mode === "dom") this.updateDomination(dt);
+      if (this.mode === "snd") this.updateSnd(dt);
+      // Bomb icon on local player
+      if (this.mode === "snd") {
+        if (this.hasBomb && !this.sndBombIcon) {
+          const bombMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x444400, emissiveIntensity: 0.3 });
+          const icon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.05), bombMat);
+          icon.position.set(0.1, -0.12, -0.35);
+          this.camera.add(icon);
+          this.sndBombIcon = icon;
+        } else if (!this.hasBomb && this.sndBombIcon) {
+          this.camera.remove(this.sndBombIcon);
+          this.sndBombIcon = null;
+        }
+      }
     }
     // Killstreak timers
     if (this.uavActive && this.now > this.uavUntil) {
@@ -516,7 +688,7 @@ export class Game {
     this.fx.update(dt);
     this.netHandler.update(dt);
     if (!this.matchOver) this.checkMatchOver();
-    if (this.tdm && !this.gameEnded) this.checkGameEnd();
+    if (this.tdm && !this.gameEnded && this.mode !== "dom" && this.mode !== "snd") this.checkGameEnd();
     this.pushHud(false);
   }
 
@@ -681,6 +853,16 @@ export class Game {
       perks: this.activePerks,
       weaponProgression: this.weaponXp,
       playerLevel: this.playerLevel,
+      domState: this.mode === "dom" ? { ...this.domState, points: this.domState.points.map(p => ({ ...p })) } : null,
+      capturePointNear: this.capPointNear,
+      captureProgress: this.capProgress,
+      sndState: this.mode === "snd" ? { ...this.sndState } : null,
+      bombCarrier: this.hasBomb,
+      planting: this.planting,
+      plantProgress: this.plantProgress,
+      defusing: this.defusing,
+      defuseProgress: this.defuseProgress,
+      hardcore: { ...this.hardcore },
     };
     this.onHud(state);
   }
@@ -778,6 +960,19 @@ export class Game {
   private checkMatchOver() {
     if (this.matchOver) return;
 
+    // Domination and S&D have their own end conditions
+    if (this.mode === "dom") {
+      if (this.domState.scoreRed >= this.domState.scoreLimit || this.domState.scoreBlue >= this.domState.scoreLimit) {
+        this.matchOver = true;
+        const winner = this.domState.scoreRed >= this.domState.scoreLimit ? "Rouge" : "Bleu";
+        this.matchResult = { winner, stats: this.buildScoreboard(), teamKillsRed: this.domState.scoreRed, teamKillsBlue: this.domState.scoreBlue };
+        this.damage.flashMessage(`${winner} GAGNE!`);
+        this.pushHud(true);
+      }
+      return;
+    }
+    if (this.mode === "snd") return;
+
     let aliveBots = 0;
     let totalBots = 0;
     for (const p of this.netState.values()) {
@@ -835,6 +1030,275 @@ export class Game {
     }
   }
 
+  // ---------------- Domination ----------------
+  private updateDomination(dt: number) {
+    if (this.matchOver) return;
+    // Check players in each capture point
+    const allPlayers: { id: string; team: "red" | "blue"; x: number; z: number }[] = [];
+    allPlayers.push({ id: this.selfId, team: this.selfTeam, x: this.lp.pos.x, z: this.lp.pos.z });
+    for (const a of this.remote.values()) {
+      if (!a.state.alive) continue;
+      allPlayers.push({ id: a.state.id, team: a.state.team, x: a.state.px, z: a.state.pz });
+    }
+
+    this.capPointNear = null;
+    this.capProgress = 0;
+
+    for (let i = 0; i < this.domState.points.length; i++) {
+      const p = this.domState.points[i];
+      const redIn = allPlayers.filter(pl => pl.team === "red" && Math.hypot(pl.x - p.x, pl.z - p.z) < p.radius);
+      const blueIn = allPlayers.filter(pl => pl.team === "blue" && Math.hypot(pl.x - p.x, pl.z - p.z) < p.radius);
+
+      p.contesting = redIn.length > 0 && blueIn.length > 0;
+
+      // Check local player proximity
+      const localD = Math.hypot(this.lp.pos.x - p.x, this.lp.pos.z - p.z);
+      if (localD < p.radius) {
+        this.capPointNear = p.id;
+      }
+
+      if (p.contesting) continue; // contested — no progress
+
+      if (redIn.length > 0 && blueIn.length === 0) {
+        p.progress = Math.min(100, p.progress + 2 * dt);
+      } else if (blueIn.length > 0 && redIn.length === 0) {
+        p.progress = Math.max(0, p.progress - 2 * dt);
+      }
+
+      // Capture
+      if (p.progress >= 100 && p.team !== "red") {
+        p.team = "red";
+        p.progress = 100;
+      } else if (p.progress <= 0 && p.team !== "blue") {
+        p.team = "blue";
+        p.progress = 0;
+      }
+
+      // Update mesh colors
+      if (i < this.capPointMeshes.length) {
+        const m = this.capPointMeshes[i];
+        const color = p.team === "red" ? 0xef4444 : p.team === "blue" ? 0x3b82f6 : 0x888888;
+        (m.flag.material as THREE.MeshBasicMaterial).color.setHex(color);
+        (m.base.material as THREE.MeshStandardMaterial).color.setHex(color);
+        (m.base.material as THREE.MeshStandardMaterial).opacity = p.team ? 0.5 : 0.35;
+      }
+
+      // Local player capture progress
+      if (this.capPointNear === p.id) {
+        if (this.selfTeam === "red" && p.team !== "red") {
+          this.capProgress = p.progress;
+        } else if (this.selfTeam === "blue" && p.team !== "blue") {
+          this.capProgress = 100 - p.progress;
+        }
+      }
+    }
+
+    // Score ticks every 2 seconds
+    this.domScoreAccum += dt;
+    if (this.domScoreAccum >= 2) {
+      this.domScoreAccum -= 2;
+      for (const p of this.domState.points) {
+        if (p.team === "red") this.domState.scoreRed++;
+        else if (p.team === "blue") this.domState.scoreBlue++;
+      }
+    }
+  }
+
+  // ---------------- Search & Destroy ----------------
+  private updateSnd(dt: number) {
+    const s = this.sndState;
+    if (this.matchOver) return;
+
+    // Count alive per team
+    s.aliveRed = (this.selfTeam === "red" && this.lp.alive ? 1 : 0);
+    s.aliveBlue = (this.selfTeam === "blue" && this.lp.alive ? 1 : 0);
+    for (const a of this.remote.values()) {
+      if (!a.state.alive) continue;
+      if (a.state.team === "red") s.aliveRed++;
+      else s.aliveBlue++;
+    }
+    // Count bots
+    for (const p of this.netState.values()) {
+      if (!p.isBot || !p.alive) continue;
+      if (p.team === "red") s.aliveRed++;
+      else s.aliveBlue++;
+    }
+
+    s.phaseTimer -= dt;
+    if (s.phaseTimer <= 0) s.phaseTimer = 0;
+
+    if (s.phase === "prep") {
+      if (s.phaseTimer <= 0) {
+        s.phase = "active";
+        s.phaseTimer = Infinity;
+      }
+    } else if (s.phase === "active") {
+      // Bomb plant progress
+      if (this.planting) {
+        this.plantProgress += dt;
+        if (this.plantProgress >= 3) {
+          this.plantProgress = 3;
+          s.bombPlanted = true;
+          s.bombSite = this.sndPlantSite;
+          s.bombTimer = 45;
+          this.sndBombPos = this.lp.pos.clone();
+          this.sndBombPos.y = 0;
+          this.planting = false;
+          this.hasBomb = false;
+          // Create bomb mesh
+          if (this.bombPlantedMesh) this.scene.remove(this.bombPlantedMesh);
+          const bombMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8, emissive: 0x000000 });
+          const bombMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.15, 8), bombMat);
+          bombMesh.position.copy(this.sndBombPos);
+          bombMesh.position.y = 0.1;
+          this.scene.add(bombMesh);
+          this.bombPlantedMesh = bombMesh;
+        }
+      }
+
+      // Defuse progress
+      if (this.defusing && s.bombPlanted) {
+        this.defuseProgress += dt;
+        if (this.defuseProgress >= 7) {
+          this.defuseProgress = 7;
+          s.bombPlanted = false;
+          s.bombTimer = 0;
+          this.defusing = false;
+          // Remove bomb mesh
+          if (this.bombPlantedMesh) {
+            this.scene.remove(this.bombPlantedMesh);
+            this.bombPlantedMesh = null;
+          }
+          // Defending team wins the round
+          this.endSndRound(s.attackingTeam === "red" ? "blue" : "red");
+          return;
+        }
+      }
+
+      // Bomb timer
+      if (s.bombPlanted) {
+        s.bombTimer -= dt;
+        if (s.bombTimer <= 0) {
+          s.bombTimer = 0;
+          // Bomb explodes — attacking team wins
+          if (this.sndBombPos) {
+            this.fx.spawnExplosionFx(this.sndBombPos);
+            this.shake = Math.min(0.8, this.shake + 0.5);
+          }
+          if (this.bombPlantedMesh) {
+            this.scene.remove(this.bombPlantedMesh);
+            this.bombPlantedMesh = null;
+          }
+          this.endSndRound(s.attackingTeam);
+          return;
+        }
+      }
+
+      // Elimination check
+      if (s.aliveRed === 0) {
+        this.endSndRound("blue");
+        return;
+      }
+      if (s.aliveBlue === 0) {
+        this.endSndRound("red");
+        return;
+      }
+    } else if (s.phase === "post") {
+      if (s.phaseTimer <= 0) {
+        // Next round
+        s.round++;
+        s.attackingTeam = s.attackingTeam === "red" ? "blue" : "red";
+        if (s.teamScoreRed >= s.roundsToWin || s.teamScoreBlue >= s.roundsToWin) {
+          this.matchOver = true;
+          const winner = s.teamScoreRed >= s.roundsToWin ? "Rouge" : "Bleu";
+          this.matchResult = { winner, stats: this.buildScoreboard() };
+          this.damage.flashMessage(`${winner} GAGNE LA PARTIE!`);
+          this.pushHud(true);
+          return;
+        }
+        this.startSndRound();
+      }
+    }
+  }
+
+  private startSndRound() {
+    const s = this.sndState;
+    s.phase = "prep";
+    s.phaseTimer = 15;
+    s.bombPlanted = false;
+    s.bombSite = null;
+    s.bombTimer = 0;
+    this.sndBombPos = null;
+    this.planting = false;
+    this.defusing = false;
+    this.plantProgress = 0;
+    this.defuseProgress = 0;
+
+    // Remove bomb mesh
+    if (this.bombPlantedMesh) {
+      this.scene.remove(this.bombPlantedMesh);
+      this.bombPlantedMesh = null;
+    }
+
+    // Respawn all players
+    this.lp.hp = this.hardcore.enabled ? Math.round(PLAYER.maxHp * 0.3) : this.lp.maxHp;
+    const sp = this.pickSpawn(this.lp.pos, s.attackingTeam === this.selfTeam ? this.selfTeam : (this.selfTeam === "red" ? "blue" : "red"));
+    this.lp.pos.set(sp.x, 0, sp.z);
+    this.lp.vel.set(0, 0, 0);
+    this.lp.vy = 0;
+    this.lp.alive = true;
+    this.lp.ammo = WEAPON_STATS[this.weaponSystem.weaponType].magSize;
+
+    for (const p of this.netState.values()) {
+      const sp2 = this.pickSpawn(new THREE.Vector3(), p.team);
+      p.px = sp2.x;
+      p.py = 0;
+      p.pz = sp2.z;
+      p.hp = this.hardcore.enabled ? Math.round(PLAYER.maxHp * 0.3) : PLAYER.maxHp;
+      p.alive = true;
+      p.killstreak = 0;
+      p.respawnAt = 0;
+      if (p.isBot) this.botManager.initBotState(p);
+    }
+
+    // Assign bomb to random attacker
+    this.hasBomb = false;
+    const attackers: string[] = [];
+    if (this.selfTeam === s.attackingTeam) attackers.push(this.selfId);
+    for (const p of this.netState.values()) {
+      if (p.team === s.attackingTeam && p.alive) attackers.push(p.id);
+    }
+    if (attackers.length > 0) {
+      const carrier = attackers[Math.floor(Math.random() * attackers.length)];
+      if (carrier === this.selfId) {
+        this.hasBomb = true;
+        this.damage.flashMessage("VOUS AVEZ LA BOMBE!");
+      }
+    }
+
+    this.damage.flashMessage(`RONDE ${s.round} — ${s.attackingTeam === "red" ? "ATTAQUE" : "DÉFENSE"}`);
+    this.pushHud(true);
+  }
+
+  private endSndRound(winnerTeam: "red" | "blue") {
+    const s = this.sndState;
+    s.phase = "post";
+    s.phaseTimer = 5;
+    if (winnerTeam === "red") s.teamScoreRed++;
+    else s.teamScoreBlue++;
+    this.damage.flashMessage(`ÉQUIPE ${winnerTeam === "red" ? "ROUGE" : "BLEUE"} GAGNE LA RONDE!`);
+
+    // Clean up bomb
+    if (this.bombPlantedMesh) {
+      this.scene.remove(this.bombPlantedMesh);
+      this.bombPlantedMesh = null;
+    }
+    this.planting = false;
+    this.defusing = false;
+    this.hasBomb = false;
+    this.pushHud(true);
+  }
+
   restartMatch() {
     this.matchOver = false;
     this.matchResult = null;
@@ -890,6 +1354,41 @@ export class Game {
     this.lp.pos.set(sp.x, 0, sp.z);
     this.lp.vel.set(0, 0, 0);
     this.lp.vy = 0;
+
+    // Reset Domination state
+    if (this.mode === "dom") {
+      this.domState.points.forEach(p => { p.team = null; p.progress = 0; p.contesting = false; });
+      this.domState.scoreRed = 0;
+      this.domState.scoreBlue = 0;
+      this.domScoreAccum = 0;
+      this.capPointNear = null;
+      this.capProgress = 0;
+    }
+
+    // Reset S&D state
+    if (this.mode === "snd") {
+      this.sndState.round = 1;
+      this.sndState.phase = "prep";
+      this.sndState.phaseTimer = 15;
+      this.sndState.attackingTeam = "red";
+      this.sndState.bombPlanted = false;
+      this.sndState.bombSite = null;
+      this.sndState.bombTimer = 0;
+      this.sndState.teamScoreRed = 0;
+      this.sndState.teamScoreBlue = 0;
+      this.sndState.aliveRed = 0;
+      this.sndState.aliveBlue = 0;
+      this.hasBomb = false;
+      this.planting = false;
+      this.defusing = false;
+      this.plantProgress = 0;
+      this.defuseProgress = 0;
+      this.sndBombPos = null;
+      if (this.bombPlantedMesh) {
+        this.scene.remove(this.bombPlantedMesh);
+        this.bombPlantedMesh = null;
+      }
+    }
 
     this.damage.flashMessage("NOUVELLE PARTIE");
     this.pushHud(true);
@@ -1066,6 +1565,8 @@ export class Game {
       a.view.dispose();
     });
     this.remote.clear();
+    if (this.sndBombIcon) { this.scene.remove(this.sndBombIcon); this.sndBombIcon = null; }
+    if (this.bombPlantedMesh) { this.scene.remove(this.bombPlantedMesh); this.bombPlantedMesh = null; }
     if (this.helicopterGroup) {
       this.scene.remove(this.helicopterGroup);
     }

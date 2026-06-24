@@ -10,6 +10,7 @@ export class DamageManager {
     const game = this.game;
     if (!game.tdm) return false;
     if (id1 === id2) return true;
+    if (game.hardcore.enabled && game.hardcore.friendlyFire) return false;
     const t1 = id1 === game.selfId ? game.selfTeam : game.netState.get(id1)?.team;
     const t2 = id2 === game.selfId ? game.selfTeam : game.netState.get(id2)?.team;
     return !!t1 && !!t2 && t1 === t2;

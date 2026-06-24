@@ -66,6 +66,17 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
   const perks: PerkType[] = (hud as any).perks ?? [];
   const weaponProgression = (hud as any).weaponProgression ?? null;
   const playerLevel: number = (hud as any).playerLevel ?? 1;
+  const domState = hud.domState;
+  const capturePointNear = hud.capturePointNear;
+  const captureProgress = hud.captureProgress;
+  const sndState = hud.sndState;
+  const bombCarrier = hud.bombCarrier;
+  const planting = hud.planting;
+  const plantProgress = hud.plantProgress;
+  const defusing = hud.defusing;
+  const defuseProgress = hud.defuseProgress;
+  const hardcoreSettings = hud.hardcore;
+  const isHardcore = hardcoreSettings?.enabled ?? false;
 
   const flashActive = flashEnd > 0 && now < flashEnd;
   const flashOpacity = flashActive ? Math.min(0.95, ((flashEnd - now) / 2000) * 0.95) : 0;
@@ -110,7 +121,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* crosshair */}
-      {hud.alive && !hud.paused && !hud.matchOver && (
+      {hud.alive && !hud.paused && !hud.matchOver && !isHardcore && (
         <Crosshair gap={hud.spread} hit={hitFlash} kill={killFlash} sprint={sprintFlash} />
       )}
 
@@ -151,10 +162,10 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* radar */}
-      <Radar radar={hud.radar} yaw={hud.yaw} minimapPings={minimapPings} uavActive={uavActive} now={now} />
+      {!isHardcore && <Radar radar={hud.radar} yaw={hud.yaw} minimapPings={minimapPings} uavActive={uavActive} now={now} />}
 
       {/* top center stats */}
-      <div className="absolute left-1/2 top-3 -translate-x-1/2 flex items-center gap-6 rounded-md bg-black/45 px-5 py-1.5 text-sm backdrop-blur">
+      {!isHardcore && <div className="absolute left-1/2 top-3 -translate-x-1/2 flex items-center gap-6 rounded-md bg-black/45 px-5 py-1.5 text-sm backdrop-blur">
         {hud.tdm && (
           <>
             <span className="text-red-400 font-bold">{hud.teamKillsRed}</span>
@@ -182,7 +193,84 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
             {hud.team === "red" ? "ROUGE" : "BLEU"}
           </span>
         )}
-      </div>
+      </div>}
+
+      {/* Domination HUD */}
+      {domState && !isHardcore && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2">
+          <div className="flex gap-6 items-center">
+            <div className="flex items-center gap-2 text-sm text-white/60">ROUGE <span className="text-2xl font-black text-rose-400">{domState.scoreRed}</span></div>
+            {domState.points.map(p => (
+              <div key={p.id} className={`text-center ${p.contesting ? 'animate-pulse' : ''}`}>
+                <div className={`text-2xl font-black ${p.team === 'red' ? 'text-rose-500' : p.team === 'blue' ? 'text-blue-400' : 'text-gray-500'}`}>
+                  {p.id.toUpperCase()}
+                </div>
+                <div className="text-[10px] uppercase tracking-wider text-white/30">
+                  {p.team === null ? 'Libre' : p.team === 'red' ? 'Rouge' : 'Bleu'}
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 text-sm text-white/60"><span className="text-2xl font-black text-blue-400">{domState.scoreBlue}</span> BLEU</div>
+          </div>
+        </div>
+      )}
+      {capturePointNear && !isHardcore && (
+        <div className="absolute bottom-44 left-1/2 -translate-x-1/2 text-center">
+          <div className="text-sm text-white/80 uppercase tracking-wider mb-1">
+            Capturer {capturePointNear.toUpperCase()}
+          </div>
+          <div className="w-48 h-2 bg-black/60 rounded-full overflow-hidden">
+            <div className="h-full bg-amber-400 transition-all" style={{ width: `${captureProgress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* S&D HUD */}
+      {sndState && !isHardcore && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 text-center">
+          <div className="text-sm text-white/80">
+            Ronde {sndState.round} · {sndState.attackingTeam === 'red' ? 'ATTAQUE' : 'DÉFENSE'}
+          </div>
+          <div className="text-4xl font-black text-amber-400">
+            {sndState.phase === 'prep' ? Math.ceil(sndState.phaseTimer) : sndState.phase === 'active' && sndState.bombPlanted ? '' : sndState.phase === 'active' ? '' : sndState.phase === 'post' ? Math.ceil(sndState.phaseTimer) : ''}
+          </div>
+          {sndState.bombPlanted && (
+            <div className="text-xl font-black text-rose-500 animate-pulse">BOMBE • {Math.ceil(sndState.bombTimer)}s</div>
+          )}
+          {defusing && (
+            <div className="mt-2">
+              <div className="text-sm text-amber-400 uppercase tracking-wider">Désamorçage…</div>
+              <div className="w-48 h-2 bg-black/60 rounded-full overflow-hidden mx-auto mt-1">
+                <div className="h-full bg-emerald-400 transition-all" style={{ width: `${(defuseProgress / 7) * 100}%` }} />
+              </div>
+            </div>
+          )}
+          {planting && (
+            <div className="mt-2">
+              <div className="text-sm text-amber-400 uppercase tracking-wider">Pose de bombe…</div>
+              <div className="w-48 h-2 bg-black/60 rounded-full overflow-hidden mx-auto mt-1">
+                <div className="h-full bg-rose-500 transition-all" style={{ width: `${(plantProgress / 3) * 100}%` }} />
+              </div>
+            </div>
+          )}
+          {bombCarrier && !sndState.bombPlanted && (
+            <div className="mt-1 text-sm text-amber-400 font-bold">💣 BOMBE</div>
+          )}
+          <div className="flex gap-3 justify-center mt-1 text-xs">
+            <span className="text-rose-400">R {sndState.teamScoreRed}</span>
+            <span className="text-blue-400">B {sndState.teamScoreBlue}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Hardcore badge */}
+      {isHardcore && (
+        <div className="absolute top-4 right-4">
+          <div className="rounded bg-rose-600/30 px-2 py-0.5 text-[10px] font-bold text-rose-400 uppercase tracking-wider ring-1 ring-rose-500/40">
+            HC
+          </div>
+        </div>
+      )}
 
       {/* killfeed */}
       <div className="absolute right-3 top-14 flex flex-col items-end gap-1 text-xs">
@@ -205,7 +293,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       </div>
 
       {/* killstreak display */}
-      {killstreaksReady.length > 0 && (
+      {killstreaksReady.length > 0 && !isHardcore && (
         <div className="absolute bottom-32 left-6 flex gap-1.5">
           {killstreaksReady.map((s) => (
             <button
@@ -220,7 +308,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* equipment indicator */}
-      {(equipmentLethal || equipmentTactical) && (
+      {(equipmentLethal || equipmentTactical) && !isHardcore && (
         <div className="absolute bottom-32 right-6 flex flex-col gap-1 text-xs">
           {equipmentLethal && (
             <div className="flex items-center gap-1.5 rounded bg-black/50 px-2 py-1">
@@ -240,13 +328,18 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* health */}
-      {perks.length > 0 && (
+      {!isHardcore && perks.length > 0 && (
         <div className="absolute bottom-6 left-[280px] flex gap-1 items-end pb-1">
           {perks.map((p) => (
             <span key={p} className="text-lg drop-shadow-[0_0_4px_rgba(0,0,0,0.8)]" title={PERK_DEFS[p].description}>{PERK_DEFS[p].icon}</span>
           ))}
         </div>
       )}
+      {isHardcore ? (
+        <div className="absolute bottom-6 left-6">
+          <span className={`text-2xl font-black ${hud.lowHp ? "text-rose-400" : "text-white"}`}>{hud.hp}</span>
+        </div>
+      ) : (
       <div className="absolute bottom-6 left-6 w-64">
         <div className="mb-1 flex items-end justify-between">
           <span className="text-xs uppercase tracking-widest text-white/60">Santé</span>
@@ -270,9 +363,10 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           </div>
         )}
       </div>
+      )}
 
       {/* weapon selector */}
-      {weaponList.length > 0 && (
+      {weaponList.length > 0 && !isHardcore && (
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2 flex gap-1">
           {weaponList.map((type, i) => (
             <div
@@ -291,7 +385,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       )}
 
       {/* weapon XP bar */}
-      {weaponProgression && weaponProgression[hud.weaponType] && (() => {
+      {weaponProgression && weaponProgression[hud.weaponType] && !isHardcore && (() => {
         const wp = weaponProgression[hud.weaponType];
         return (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-64">
@@ -304,7 +398,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       })()}
 
       {/* weapon / ammo */}
-      <div className="absolute bottom-6 right-6 text-right">
+      {!isHardcore && <div className="absolute bottom-6 right-6 text-right">
         <div className="mb-1 flex items-center justify-end gap-2">
           <div className="flex h-5 w-8 items-center justify-center rounded bg-white/10 text-[10px] font-bold text-white/70 ring-1 ring-white/20">
             {hud.fireMode === "auto" ? "A" : "S"}
@@ -328,9 +422,10 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
             />
           </div>
         )}
-      </div>
+      </div>}
 
       {/* mute toggle */}
+      {!isHardcore && (
       <button
         onClick={() => {
           const m = !muted;
@@ -341,6 +436,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
       >
         {muted ? "🔇 Son coupé" : "🔊 Son activé"}
       </button>
+      )}
 
       {/* scoreboard */}
       {showScore && (

@@ -107,6 +107,16 @@ export interface HudState {
   perks: PerkType[];
   weaponProgression: WeaponProgressionData;
   playerLevel: number;
+  domState: DomState | null;
+  capturePointNear: string | null;
+  captureProgress: number;
+  sndState: SndState | null;
+  bombCarrier: boolean;
+  planting: boolean;
+  plantProgress: number;
+  defusing: boolean;
+  defuseProgress: number;
+  hardcore: HardcoreSettings | null;
 }
 
 export const WEAPON = {
@@ -283,3 +293,45 @@ export interface WeaponProgression {
   headshots: number;
 }
 export type WeaponProgressionData = Record<WeaponType, WeaponProgression>;
+
+export interface CapturePoint {
+  id: string;
+  x: number;
+  z: number;
+  radius: number;
+  team: "red" | "blue" | null;
+  progress: number;
+  contesting: boolean;
+}
+
+export interface DomState {
+  points: CapturePoint[];
+  scoreRed: number;
+  scoreBlue: number;
+  scoreLimit: number;
+}
+
+export interface SndState {
+  round: number;
+  phase: "prep" | "active" | "post";
+  phaseTimer: number;
+  attackingTeam: "red" | "blue";
+  bombPlanted: boolean;
+  bombSite: "a" | "b" | null;
+  bombTimer: number;
+  teamScoreRed: number;
+  teamScoreBlue: number;
+  roundsToWin: number;
+  aliveRed: number;
+  aliveBlue: number;
+}
+
+export interface HardcoreSettings {
+  enabled: boolean;
+  hpMultiplier: number;
+  friendlyFire: boolean;
+  noHud: boolean;
+  noCrosshair: boolean;
+  noRadar: boolean;
+  headshotOnly: boolean;
+}
