@@ -46,6 +46,8 @@ export interface ScoreRow {
 export interface MatchResult {
   winner: string;
   stats: ScoreRow[];
+  teamKillsRed?: number;
+  teamKillsBlue?: number;
 }
 
 export interface RadarBlip {
@@ -117,6 +119,15 @@ export interface HudState {
   defusing: boolean;
   defuseProgress: number;
   hardcore: HardcoreSettings | null;
+  matchPhase: "countdown" | "playing" | "ended";
+  countdownLeft: number;
+  matchTime: number;
+  matchTimeLimit: number;
+  mapName: string;
+  spectating: boolean;
+  multiKillMessage: string | null;
+  multiKillTime: number;
+  headshotTime: number;
 }
 
 export const WEAPON = {

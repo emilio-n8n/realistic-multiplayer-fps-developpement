@@ -4,6 +4,9 @@ import * as Sfx from "./sound";
 import type { Game } from "./engine";
 
 export class DamageManager {
+  private lastKillTime = 0;
+  private multiKillCount = 0;
+
   constructor(private game: Game) {}
 
   isFriendly(id1: string, id2: string): boolean {
@@ -174,9 +177,31 @@ export class DamageManager {
   onSelfKill(victim: string, head: boolean) {
     const game = this.game;
     game.killmarker = performance.now();
+    const now = performance.now();
+    if (now - this.lastKillTime < 3000) {
+      this.multiKillCount++;
+    } else {
+      this.multiKillCount = 1;
+    }
+    this.lastKillTime = now;
     let msg = head ? "TIR À LA TÊTE" : `${victim.toUpperCase()} ÉLIMINÉ`;
     if (game.lp.killstreak >= 3) msg = `${game.lp.killstreak} ÉLIMINATIONS D'AFFILÉE`;
     this.flashMessage(msg);
+    // Multi-kill announcements
+    if (this.multiKillCount >= 4) {
+      game.multiKillMessage = "MEGA KILL";
+      game.multiKillTime = now;
+    } else if (this.multiKillCount >= 3) {
+      game.multiKillMessage = "TRIPLE KILL";
+      game.multiKillTime = now;
+    } else if (this.multiKillCount >= 2) {
+      game.multiKillMessage = "DOUBLE KILL";
+      game.multiKillTime = now;
+    }
+    // Headshot indicator
+    if (head) {
+      game.headshotTime = now;
+    }
     Sfx.hitMarker();
   }
 
@@ -187,6 +212,8 @@ export class DamageManager {
     game.lp.respawnAt = game.now + 3;
     game.streakKills = 0;
     game.killstreaksReady = [];
+    game.spectating = true;
+    game.spectatorCamPos.copy(game.camera.position);
     Sfx.deathSound();
     this.flashMessage("VOUS ÊTES MORT");
     game.pushHud(true);
@@ -196,6 +223,7 @@ export class DamageManager {
     const game = this.game;
     const lp = game.lp;
     if (lp.alive) return;
+    game.spectating = false;
     if (fromWorld && game.selfState) {
       lp.pos.set(game.selfState.px, game.selfState.py, game.selfState.pz);
       lp.yaw = game.selfState.yaw;

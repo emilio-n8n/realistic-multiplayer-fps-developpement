@@ -154,6 +154,16 @@ export class Game {
   matchResult: { winner: string; stats: ScoreRow[]; teamKillsRed?: number; teamKillsBlue?: number } | null = null;
   lastDamageDealt = 0;
   lastDamageDealtTime = 0;
+  matchPhase: "countdown" | "playing" | "ended" = "countdown";
+  countdownStartAt = 0;
+  matchStartAt = 0;
+  matchTime = 0;
+  matchTimeLimit = 600;
+  spectating = false;
+  spectatorCamPos = new THREE.Vector3(0, 20, 0);
+  multiKillMessage: string | null = null;
+  multiKillTime = 0;
+  headshotTime = 0;
 
   // input
   keys = new Set<string>();
@@ -640,6 +650,11 @@ export class Game {
   start() {
     this.clock.start();
     this.gameStartTime = this.clock.elapsedTime;
+    this.countdownStartAt = 0;
+    this.matchStartAt = 0;
+    this.matchTime = 0;
+    this.matchPhase = "countdown";
+    this.spectating = false;
     this.loop();
     this.pushHud(true);
   }
@@ -655,23 +670,43 @@ export class Game {
 
   private update(dt: number) {
     if (!this.paused) {
-      this.localPlayer.update(dt);
-      this.weaponSystem.update(dt);
-      if (this.mouseDown) this.weaponSystem.tryFire();
-      this.equipment.update(dt);
-      if (this.mode === "dom") this.updateDomination(dt);
-      if (this.mode === "snd") this.updateSnd(dt);
-      // Bomb icon on local player
-      if (this.mode === "snd") {
-        if (this.hasBomb && !this.sndBombIcon) {
-          const bombMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x444400, emissiveIntensity: 0.3 });
-          const icon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.05), bombMat);
-          icon.position.set(0.1, -0.12, -0.35);
-          this.camera.add(icon);
-          this.sndBombIcon = icon;
-        } else if (!this.hasBomb && this.sndBombIcon) {
-          this.camera.remove(this.sndBombIcon);
-          this.sndBombIcon = null;
+      if (this.matchPhase === "countdown") {
+        if (this.countdownStartAt === 0) this.countdownStartAt = this.now;
+        const elapsed = this.now - this.countdownStartAt;
+        if (elapsed >= 3.5) {
+          this.matchPhase = "playing";
+          this.matchStartAt = this.now;
+          this.damage.flashMessage("GO!");
+          this.pushHud(true);
+        }
+      } else if (this.matchPhase === "playing") {
+        if (this.spectating) {
+          this.updateSpectator(dt);
+        } else {
+          this.localPlayer.update(dt);
+          this.weaponSystem.update(dt);
+          if (this.mouseDown) this.weaponSystem.tryFire();
+          this.equipment.update(dt);
+          if (this.mode === "dom") this.updateDomination(dt);
+          if (this.mode === "snd") this.updateSnd(dt);
+        }
+        // Match time tracking
+        this.matchTime = this.now - this.matchStartAt;
+        if (this.matchTime >= this.matchTimeLimit) {
+          this.endMatchDueToTimeLimit();
+        }
+        // Bomb icon on local player (only when not spectating)
+        if (this.mode === "snd" && !this.spectating) {
+          if (this.hasBomb && !this.sndBombIcon) {
+            const bombMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x444400, emissiveIntensity: 0.3 });
+            const icon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.05), bombMat);
+            icon.position.set(0.1, -0.12, -0.35);
+            this.camera.add(icon);
+            this.sndBombIcon = icon;
+          } else if (!this.hasBomb && this.sndBombIcon) {
+            this.camera.remove(this.sndBombIcon);
+            this.sndBombIcon = null;
+          }
         }
       }
     }
@@ -863,6 +898,17 @@ export class Game {
       defusing: this.defusing,
       defuseProgress: this.defuseProgress,
       hardcore: { ...this.hardcore },
+      matchPhase: this.matchPhase,
+      countdownLeft: this.matchPhase === "countdown" && this.countdownStartAt > 0
+        ? Math.max(0, 3 - (this.now - this.countdownStartAt))
+        : 0,
+      matchTime: this.matchPhase === "playing" ? this.now - this.matchStartAt : 0,
+      matchTimeLimit: this.matchTimeLimit,
+      mapName: "FRONTLINE ARENA",
+      spectating: this.spectating,
+      multiKillMessage: this.multiKillMessage,
+      multiKillTime: this.multiKillTime,
+      headshotTime: this.headshotTime,
     };
     this.onHud(state);
   }
@@ -954,6 +1000,55 @@ export class Game {
     }
     rows.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
     return rows;
+  }
+
+  // ---------------- spectator ----------------
+  private updateSpectator(dt: number) {
+    const spd = 15;
+    const fwd = (this.keys.has("KeyW") ? 1 : 0) - (this.keys.has("KeyS") ? 1 : 0);
+    const str = (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
+    if (fwd !== 0 || str !== 0) {
+      const sin = Math.sin(this.lp.yaw);
+      const cos = Math.cos(this.lp.yaw);
+      const dx = (-sin * fwd + cos * str) * spd * dt;
+      const dz = (-cos * fwd - sin * str) * spd * dt;
+      this.camera.position.x += dx;
+      this.camera.position.z += dz;
+    }
+    // Up/down with Q/E
+    if (this.keys.has("KeyE")) this.camera.position.y += spd * dt;
+    if (this.keys.has("KeyQ")) this.camera.position.y -= spd * dt;
+    // Mouse look
+    this.camera.rotation.y = this.lp.yaw;
+    this.camera.rotation.x = this.lp.pitch;
+    // Space to respawn
+    if (this.keys.has("Space")) {
+      this.keys.delete("Space");
+      this.damage.handleSelfRespawn(false);
+      this.spectating = false;
+    }
+  }
+
+  private endMatchDueToTimeLimit() {
+    if (this.matchOver) return;
+    this.matchOver = true;
+    this.gameEnded = true;
+    this.matchPhase = "ended";
+    if (this.tdm) {
+      const winner = this.teamKillsRed > this.teamKillsBlue ? "Rouge" :
+                     this.teamKillsBlue > this.teamKillsRed ? "Bleu" : "Match nul";
+      this.matchResult = { winner, stats: this.buildScoreboard(), teamKillsRed: this.teamKillsRed, teamKillsBlue: this.teamKillsBlue };
+    } else if (this.mode === "dom") {
+      const winner = this.domState.scoreRed > this.domState.scoreBlue ? "Rouge" :
+                     this.domState.scoreBlue > this.domState.scoreRed ? "Bleu" : "Match nul";
+      this.matchResult = { winner, stats: this.buildScoreboard(), teamKillsRed: this.domState.scoreRed, teamKillsBlue: this.domState.scoreBlue };
+    } else {
+      const allStats = this.buildScoreboard();
+      const winner = allStats.length > 0 ? allStats[0].name : "Personne";
+      this.matchResult = { winner, stats: allStats };
+    }
+    this.damage.flashMessage("TEMPS ÉCOULÉ!");
+    this.pushHud(true);
   }
 
   // ---------------- match flow ----------------
@@ -1389,6 +1484,15 @@ export class Game {
         this.bombPlantedMesh = null;
       }
     }
+
+    this.matchPhase = "countdown";
+    this.countdownStartAt = 0;
+    this.matchStartAt = 0;
+    this.matchTime = 0;
+    this.spectating = false;
+    this.multiKillMessage = null;
+    this.multiKillTime = 0;
+    this.headshotTime = 0;
 
     this.damage.flashMessage("NOUVELLE PARTIE");
     this.pushHud(true);

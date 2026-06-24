@@ -8,6 +8,12 @@ function hex(c: number) {
   return "#" + c.toString(16).padStart(6, "0");
 }
 
+function formatTime(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
 interface Props {
   hud: HudState;
   mode: GameMode;
@@ -100,11 +106,41 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           0% { opacity: 1; transform: translateY(0); }
           100% { opacity: 0; transform: translateY(-40px); }
         }
+        @keyframes countPop {
+          0% { transform: scale(2); opacity: 0; }
+          50% { transform: scale(1); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes countFade {
+          0% { transform: scale(1.5); opacity: 0; }
+          30% { transform: scale(1); opacity: 1; }
+          100% { opacity: 0; transform: scale(0.8); }
+        }
+        @keyframes slideUp {
+          0% { transform: translateY(40px); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
       `}</style>
 
       {/* flashbang overlay */}
       {flashActive && (
         <div className="absolute inset-0 z-50" style={{ background: "white", opacity: flashOpacity }} />
+      )}
+
+      {/* countdown overlay */}
+      {hud.matchPhase === "countdown" && hud.countdownLeft > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-50">
+          <div key={Math.ceil(hud.countdownLeft)} className="text-[180px] font-black text-amber-400 animate-[countPop_0.6s_ease-out] drop-shadow-2xl">
+            {Math.ceil(hud.countdownLeft)}
+          </div>
+        </div>
+      )}
+      {hud.matchPhase === "countdown" && hud.countdownLeft === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-50">
+          <div className="text-[120px] font-black text-emerald-400 animate-[countFade_0.8s_ease-out] drop-shadow-2xl">
+            GO!
+          </div>
+        </div>
       )}
 
       {/* vignette */}
@@ -291,6 +327,16 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           );
         })}
       </div>
+
+      {/* match timer + map name */}
+      {hud.matchPhase === "playing" && (
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 text-center pointer-events-none z-40">
+          <div className={`text-2xl font-mono font-black ${hud.matchTimeLimit - hud.matchTime < 60 ? 'text-rose-500 animate-pulse' : 'text-white/80'}`}>
+            {formatTime(hud.matchTime)} / {formatTime(hud.matchTimeLimit)}
+          </div>
+          <div className="text-[10px] uppercase tracking-widest text-white/30">{hud.mapName}</div>
+        </div>
+      )}
 
       {/* killstreak display */}
       {killstreaksReady.length > 0 && !isHardcore && (
@@ -492,11 +538,41 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
         </div>
       )}
 
-      {/* respawn overlay */}
-      {!hud.alive && !hud.paused && !hud.matchOver && (
+      {/* spectator overlay */}
+      {!hud.alive && !hud.paused && !hud.matchOver && hud.spectating && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 z-40 pointer-events-none">
+          <div className="text-xs uppercase tracking-widest text-white/40 mb-2">👁 MODE SPECTATEUR</div>
+          <div className="mt-2 text-sm text-white/50">ESPACE → Réapparaître</div>
+          <div className="mt-1 text-[10px] text-white/30">Q/E monter/descendre · WASD se déplacer</div>
+        </div>
+      )}
+
+      {/* respawn overlay (only when not spectating) */}
+      {!hud.alive && !hud.paused && !hud.matchOver && !hud.spectating && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/55 backdrop-blur-sm">
           <div className="text-5xl font-black tracking-widest text-rose-500 drop-shadow">ÉLIMINÉ</div>
           <div className="mt-3 text-white/70">Réapparition dans {Math.ceil(hud.respawnIn)}…</div>
+        </div>
+      )}
+
+      {/* multi-kill announcement */}
+      {hud.multiKillMessage && now - hud.multiKillTime < 1500 && (
+        <div className="absolute left-1/2 top-[32%] -translate-x-1/2 text-center z-50 pointer-events-none">
+          <div
+            className="text-5xl font-black text-amber-400 drop-shadow-[0_0_20px_rgba(251,191,36,0.6)]"
+            style={{ animation: "countFade 0.8s ease-out forwards" }}
+          >
+            {hud.multiKillMessage}
+          </div>
+        </div>
+      )}
+
+      {/* headshot indicator */}
+      {hud.headshotTime > 0 && now - hud.headshotTime < 800 && (
+        <div className="absolute left-1/2 top-[38%] -translate-x-1/2 text-center z-50 pointer-events-none">
+          <div className="text-3xl font-black text-yellow-300 drop-shadow-[0_0_10px_rgba(253,224,71,0.6)]" style={{ animation: "countFade 0.8s ease-out forwards" }}>
+            HEADSHOT
+          </div>
         </div>
       )}
 
@@ -508,26 +584,52 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
         >
           <div
             className="pointer-events-auto w-[480px] max-w-[92vw] rounded-2xl border border-white/10 bg-zinc-900/90 p-7 shadow-2xl"
-            style={{ animation: "fadeIn 0.5s ease-out forwards" }}
+            style={{ animation: "slideUp 0.5s ease-out forwards" }}
           >
             <div className="text-center">
               <div className="text-sm uppercase tracking-[0.3em] text-amber-400/60">Partie terminée</div>
               <h2 className="mt-2 text-4xl font-black text-white">
                 FRONT<span className="text-amber-400">LINE</span>
               </h2>
+              {/* Victory/Defeat */}
+              {hud.tdm && (
+                <div className="mt-3">
+                  <div className={`text-5xl font-black ${hud.matchResult.winner === (hud.team === "red" ? "Rouge" : "Bleu") || hud.matchResult.winner === name ? "text-emerald-400" : "text-rose-500"}`}>
+                    {hud.matchResult.winner === (hud.team === "red" ? "Rouge" : "Bleu") || hud.matchResult.winner === name ? "VICTOIRE" : "DÉFAITE"}
+                  </div>
+                </div>
+              )}
               <div className="mt-4">
                 <div className="text-lg text-white/60">Vainqueur</div>
                 <div className="mt-1 text-3xl font-black text-amber-300">{hud.matchResult.winner}</div>
               </div>
             </div>
 
+            {/* Team scores */}
+            {hud.tdm && (() => {
+              const mr = hud.matchResult!;
+              return (
+              <div className="mt-4 flex justify-center gap-8 text-lg font-bold">
+                <div className="text-center">
+                  <div className="text-sm text-red-400">Rouge</div>
+                  <div className="text-3xl text-red-300">{mr.teamKillsRed ?? hud.teamKillsRed}</div>
+                </div>
+                <div className="text-3xl text-white/30 self-end pb-1">-</div>
+                <div className="text-center">
+                  <div className="text-sm text-blue-400">Bleu</div>
+                  <div className="text-3xl text-blue-300">{mr.teamKillsBlue ?? hud.teamKillsBlue}</div>
+                </div>
+              </div>
+              );
+            })()}
+
             {/* MVP */}
             {hud.matchResult.stats.length > 0 &&
               (() => {
                 const mvp = hud.matchResult.stats.reduce((best, r) => (r.kills > best.kills ? r : best));
                 return (
-                  <div className="mt-5 rounded-xl bg-amber-500/10 px-4 py-3 ring-1 ring-amber-400/30">
-                    <div className="text-center text-xs uppercase tracking-widest text-amber-400/60">MVP</div>
+                  <div className="mt-5 rounded-xl bg-amber-500/10 px-4 py-3 ring-1 ring-amber-400/30" style={{ animation: "fadeIn 0.6s ease-out forwards" }}>
+                    <div className="text-center text-xs uppercase tracking-widest text-amber-400/60">👑 MVP</div>
                     <div className="mt-1 flex items-center justify-center gap-3">
                       <span
                         className="inline-block h-4 w-4 rounded-full ring-2 ring-amber-400/50"
@@ -568,6 +670,9 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
                         <span className={r.self ? "font-bold text-amber-200" : "text-white/80"}>{r.name}</span>
                         {!r.alive && <span className="ml-1 text-rose-400/70">☠</span>}
                         {r.isBot && <span className="ml-1 text-white/30 text-[10px]">BOT</span>}
+                        {hud.matchResult!.stats.reduce((best, r2) => r2.kills > best.kills ? r2 : best).name === r.name && (
+                          <span className="ml-1 text-amber-400">👑</span>
+                        )}
                       </td>
                       <td className="px-3 py-1.5 text-right text-emerald-400">{r.kills}</td>
                       <td className="px-3 py-1.5 text-right text-rose-400">{r.deaths}</td>
@@ -584,13 +689,13 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
             <div className="mt-6 flex gap-3">
               <button
                 onClick={onRestart}
-                className="flex-1 rounded-lg bg-amber-500 py-3 text-center font-bold text-black transition hover:bg-amber-400"
+                className="flex-1 rounded-lg bg-amber-500 py-3 text-center font-bold text-black transition hover:bg-amber-400 hover:scale-[1.02] active:scale-95"
               >
                 ▶ REJOUER
               </button>
               <button
                 onClick={onLeave}
-                className="flex-1 rounded-lg bg-white/5 py-3 text-center text-sm text-white/60 ring-1 ring-white/10 transition hover:bg-white/10"
+                className="flex-1 rounded-lg bg-white/5 py-3 text-center text-sm text-white/60 ring-1 ring-white/10 transition hover:bg-white/10 hover:scale-[1.02] active:scale-95"
               >
                 Quitter
               </button>

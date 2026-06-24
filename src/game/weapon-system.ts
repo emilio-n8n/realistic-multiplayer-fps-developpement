@@ -15,6 +15,7 @@ export class WeaponSystem {
   swappingFrom = 0;
   swapTimer = 0;
   sprintBlock = false;
+  private sprintLower = 0;
 
   constructor(private game: Game) {
     this.ammo = WEAPON_LIST.map((t) => WEAPON_STATS[t].magSize);
@@ -98,13 +99,19 @@ export class WeaponSystem {
 
     const lp = game.lp;
     const planarSpeed = Math.hypot(lp.vel.x, lp.vel.z);
-    const bobX = Math.cos(game.bob) * 0.012 * Math.min(1, planarSpeed / 6);
-    const bobY = Math.abs(Math.sin(game.bob)) * 0.014 * Math.min(1, planarSpeed / 6);
+    const runningMult = lp.sprinting ? 2.0 : 1.0;
+    const adsBobMult = lp.ads ? 0 : 1;
+    const bobX = Math.cos(game.bob) * 0.012 * Math.min(1, planarSpeed / 6) * runningMult * adsBobMult;
+    const bobY = Math.abs(Math.sin(game.bob)) * 0.014 * Math.min(1, planarSpeed / 6) * runningMult * adsBobMult;
     const crouchDip = lp.crouch ? 0.05 : 0;
     const adsOffset = lp.ads ? 0.06 : 0;
 
+    // Sprint weapon lower — smooth lerp
+    const targetSprintLower = lp.sprinting ? 0.08 : 0;
+    this.sprintLower += (targetSprintLower - this.sprintLower) * Math.min(1, dt * 8);
+
     const g = game.weapon.group;
-    g.position.set(0.17 + game.sway.x + bobX, -0.15 + bobY - crouchDip + game.sway.y, -0.42 - adsOffset);
+    g.position.set(0.17 + game.sway.x + bobX, -0.15 + bobY - crouchDip + game.sway.y - this.sprintLower, -0.42 - adsOffset);
     g.rotation.set(game.sway.y * 2, Math.PI + game.sway.x * 2, 0);
 
     // Sprint-to-fire check

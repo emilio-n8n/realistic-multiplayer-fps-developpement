@@ -166,6 +166,12 @@ export default function Lobby({ mode, code, status, error, name, peers, botCount
             </div>
           )}
 
+          {/* map info */}
+          <div className="mt-5 text-center">
+            <div className="text-xs uppercase tracking-widest text-white/40">Carte</div>
+            <div className="mt-1 text-sm font-bold text-amber-400">FRONTLINE ARENA</div>
+          </div>
+
           {/* solo info */}
           {isSolo && (
             <div className="mt-5 space-y-3">
