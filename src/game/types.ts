@@ -80,7 +80,7 @@ export const WEAPON = {
   name: "AR-15",
   magSize: 30,
   reserveMax: 120,
-  fireRate: 0.095, // seconds between shots
+  fireRate: 0.095,
   damage: 28,
   headMult: 3.4,
   reloadTime: 1.7,
@@ -89,6 +89,11 @@ export const WEAPON = {
   spread: 0.012,
   moveSpread: 0.05,
   recoil: 0.022,
+  adsSpreadMult: 0.3,
+  penDmgMult: 0.5,
+  limbDmgArm: 0.7,
+  limbDmgLeg: 0.5,
+  vestDR: 0.3,
 };
 
 export const PLAYER = {
@@ -106,6 +111,23 @@ export const PLAYER = {
   eyeHeight: 1.55,
   regenDelay: 4.5,
   regenRate: 26,
+  slideDuration: 0.5,
+  slideSpeed: 10,
+  airControlMult: 0.4,
+  adsSpeedMult: 0.55,
+  sprintReadyDelay: 0.3,
+  bleedThreshold: 20,
+  bleedMaxRegen: 20,
+};
+
+export const GRENADE = {
+  cookTime: 3,
+  radius: 8,
+  maxDamage: 80,
+  throwSpeed: 18,
+  bounceFactor: 0.5,
+  gravity: 12,
+  poolSize: 6,
 };
 
 export const COLORS = [

@@ -186,3 +186,93 @@ export function sandTexture(repeat = 1) {
   }
   return makeTexture(c, repeat);
 }
+
+/** Military camouflage pattern tinted to the given color. */
+export function camoTexture(color: number, repeat = 1) {
+  const size = 256;
+  const c = createCanvas(size);
+  const ctx = c.getContext("2d")!;
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  applyNoise(ctx, size, [r, g, b], 55);
+
+  for (let i = 0; i < 28; i++) {
+    const dr = Math.random() > 0.5 ? 35 : -30;
+    const dg = Math.random() > 0.5 ? 35 : -30;
+    const db = Math.random() > 0.5 ? 35 : -30;
+    ctx.fillStyle = `rgba(${Math.max(0, Math.min(255, r + dr))},${Math.max(0, Math.min(255, g + dg))},${Math.max(0, Math.min(255, b + db))},0.35)`;
+    ctx.beginPath();
+    const cx = Math.random() * size;
+    const cy = Math.random() * size;
+    const rx = Math.random() * 38 + 14;
+    const ry = Math.random() * 28 + 10;
+    ctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return makeTexture(c, repeat);
+}
+
+/** Gunmetal: dark gray with subtle horizontal wear scratches. */
+export function gunmetalTexture(repeat = 1) {
+  const size = 256;
+  const c = createCanvas(size);
+  const ctx = c.getContext("2d")!;
+  applyNoise(ctx, size, [42, 45, 50], 15);
+  ctx.globalAlpha = 0.1;
+  for (let i = 0; i < 200; i++) {
+    ctx.strokeStyle = Math.random() > 0.5 ? "#5a606a" : "#2a2e33";
+    ctx.beginPath();
+    const y = Math.random() * size;
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y + (Math.random() - 0.5) * 3);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  return makeTexture(c, repeat);
+}
+
+/** Polymer: very dark, slightly rough surface with micro-texture. */
+export function polymerTexture(repeat = 1) {
+  const size = 256;
+  const c = createCanvas(size);
+  const ctx = c.getContext("2d")!;
+  applyNoise(ctx, size, [25, 27, 30], 10);
+  for (let i = 0; i < 500; i++) {
+    const v = Math.random() * 15 + 20;
+    ctx.fillStyle = `rgba(${v},${v + 2},${v + 4},0.15)`;
+    ctx.fillRect(Math.random() * size, Math.random() * size, 3, 3);
+  }
+  return makeTexture(c, repeat);
+}
+
+/** Wood grain: warm brown with flowing grain lines. */
+export function woodGrainTexture(repeat = 1) {
+  const size = 256;
+  const c = createCanvas(size);
+  const ctx = c.getContext("2d")!;
+  applyNoise(ctx, size, [80, 55, 30], 15);
+  ctx.globalAlpha = 0.3;
+  for (let i = 0; i < 25; i++) {
+    ctx.strokeStyle = "#5a3a18";
+    ctx.lineWidth = 1 + Math.random() * 2;
+    ctx.beginPath();
+    const y = Math.random() * size;
+    ctx.moveTo(0, y);
+    for (let x = 0; x < size; x += 8) {
+      ctx.lineTo(x, y + Math.sin(x * 0.05 + i * 1.3) * 4 + (Math.random() - 0.5) * 3);
+    }
+    ctx.stroke();
+  }
+  for (let i = 0; i < 6; i++) {
+    ctx.strokeStyle = "#4a2a10";
+    ctx.lineWidth = 2 + Math.random() * 2;
+    ctx.beginPath();
+    const knotX = Math.random() * size;
+    const knotY = Math.random() * size;
+    ctx.ellipse(knotX, knotY, 6 + Math.random() * 8, 4 + Math.random() * 6, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  return makeTexture(c, repeat);
+}

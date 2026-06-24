@@ -44,11 +44,12 @@ export function buildMap(): GameMap {
   const crateMat = new THREE.MeshStandardMaterial({ map: crateTexture(1), roughness: 0.85 });
   const barrelMat = new THREE.MeshStandardMaterial({ map: barrelTexture(), roughness: 0.6, metalness: 0.5 });
 
-  function addBox(w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material) {
+  function addBox(w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, matName = "concrete") {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.userData.material = matName;
     group.add(mesh);
     const box = new THREE.Box3().setFromObject(mesh);
     colliders.push(box);
@@ -88,7 +89,7 @@ export function buildMap(): GameMap {
     [-9, 9, 7, 0.6],
   ];
   for (const [x, z, w, d] of covers) {
-    addBox(w, 2.3, d, x, 1.15, z, metalMat);
+    addBox(w, 2.3, d, x, 1.15, z, metalMat, "metal");
   }
 
   // Scattered crates (some stacked)
@@ -103,7 +104,7 @@ export function buildMap(): GameMap {
     const s = 1.6 + rng() * 1.0;
     const stack = rng() < 0.28 ? 2 : 1;
     for (let i = 0; i < stack; i++) {
-      addBox(s, s, s, x, s / 2 + i * s, z, crateMat);
+      addBox(s, s, s, x, s / 2 + i * s, z, crateMat, "wood");
     }
     placed++;
   }
@@ -120,6 +121,7 @@ export function buildMap(): GameMap {
     mesh.position.set(x, 0.7, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.userData.material = "metal";
     group.add(mesh);
     const box = new THREE.Box3().setFromObject(mesh);
     colliders.push(box);
