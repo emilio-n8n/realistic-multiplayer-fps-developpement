@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { PState } from "./types";
+import type { PState, ChatMessage } from "./types";
 import { COLORS, WEAPON_STATS } from "./types";
 import type { NetMsg } from "../net/net";
 import * as Sfx from "./sound";
@@ -151,6 +151,18 @@ export class NetHandler {
             const source = String(msg.owner || game.selfId);
             game.equipment.grenadeAoeDamage(pos, source);
             game.net?.broadcast({ t: "grenade_explode", px: msg.px, py: msg.py, pz: msg.pz, owner: msg.owner }, _from);
+          }
+        }
+        break;
+      case "chat":
+        {
+          const chatMsg = msg.msg as ChatMessage;
+          if (chatMsg) {
+            game.chatMessages.push(chatMsg);
+            if (game.chatMessages.length > 50) game.chatMessages.splice(0, game.chatMessages.length - 50);
+            if (game.mode === "host") {
+              game.net?.broadcast({ t: "chat", msg: chatMsg }, _from);
+            }
           }
         }
         break;

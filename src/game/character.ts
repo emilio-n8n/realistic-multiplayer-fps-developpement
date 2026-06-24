@@ -11,6 +11,9 @@ export interface CharacterView {
   baseColor: number;
   setFiring: (on: boolean, t: number) => void;
   setAlive: (alive: boolean) => void;
+  die: () => void;
+  setMoving: (moving: boolean, sprinting: boolean) => void;
+  updateAnimations: (dt: number) => void;
   dispose: () => void;
 }
 
@@ -96,6 +99,8 @@ function makeNameTexture(name: string, color: number) {
 
 export function makeCharacter(color: number, name: string): CharacterView {
   const group = new THREE.Group();
+  const pivot = new THREE.Group();
+  group.add(pivot);
 
   const camoTex = camoTexture(color);
   const bodyMat = new THREE.MeshStandardMaterial({ map: camoTex, roughness: 0.7, metalness: 0.1 });
@@ -107,7 +112,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const thighR = new THREE.Mesh(thighGeo, bodyMat);
   thighR.position.set(0.12, 0.2, 0);
   thighR.userData.part = "body";
-  group.add(thighL, thighR);
+  pivot.add(thighL, thighR);
 
   const shinL = new THREE.Mesh(shinGeo, bodyMat);
   shinL.position.set(-0.12, 0.55, 0);
@@ -115,7 +120,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const shinR = new THREE.Mesh(shinGeo, bodyMat);
   shinR.position.set(0.12, 0.55, 0);
   shinR.userData.part = "body";
-  group.add(shinL, shinR);
+  pivot.add(shinL, shinR);
 
   const bootGeo = new THREE.BoxGeometry(0.12, 0.1, 0.22);
   const bootL = new THREE.Mesh(bootGeo, bootMat);
@@ -124,24 +129,24 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const bootR = new THREE.Mesh(bootGeo, bootMat);
   bootR.position.set(0.12, 0.79, 0.03);
   bootR.userData.part = "body";
-  group.add(bootL, bootR);
+  pivot.add(bootL, bootR);
 
   // --- TORSO ---
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.5, 4, 10), bodyMat);
   body.position.set(0, 1.15, 0);
   body.userData.part = "body";
   body.castShadow = true;
-  group.add(body);
+  pivot.add(body);
 
   const vestBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.44, 0.05), vestMat);
   vestBack.position.set(0, 1.18, -0.19);
   vestBack.userData.part = "body";
-  group.add(vestBack);
+  pivot.add(vestBack);
 
   const vestFront = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.44, 0.05), vestMat);
   vestFront.position.set(0, 1.18, 0.19);
   vestFront.userData.part = "body";
-  group.add(vestFront);
+  pivot.add(vestFront);
 
   // --- SHOULDERS ---
   const shouldL = new THREE.Mesh(shouldGeo, vestMat);
@@ -150,7 +155,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const shouldR = new THREE.Mesh(shouldGeo, vestMat);
   shouldR.position.set(0.33, 1.35, 0);
   shouldR.userData.part = "body";
-  group.add(shouldL, shouldR);
+  pivot.add(shouldL, shouldR);
 
   // --- ARMS ---
   const armUL = new THREE.Mesh(bicepGeo, bodyMat);
@@ -161,7 +166,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   armUR.position.set(0.36, 1.15, 0.14);
   armUR.rotation.z = -0.15;
   armUR.userData.part = "body";
-  group.add(armUL, armUR);
+  pivot.add(armUL, armUR);
 
   const armFL = new THREE.Mesh(forearmGeo, bodyMat);
   armFL.position.set(-0.4, 0.87, 0.06);
@@ -171,7 +176,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   armFR.position.set(0.4, 0.87, 0.18);
   armFR.rotation.z = -0.12;
   armFR.userData.part = "body";
-  group.add(armFL, armFR);
+  pivot.add(armFL, armFR);
 
   const handL = new THREE.Mesh(handGeo, skinMat);
   handL.position.set(-0.41, 0.72, 0.08);
@@ -179,25 +184,25 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const handR = new THREE.Mesh(handGeo, skinMat);
   handR.position.set(0.41, 0.72, 0.2);
   handR.userData.part = "body";
-  group.add(handL, handR);
+  pivot.add(handL, handR);
 
   // --- HEAD ---
   const head = new THREE.Mesh(headGeo, skinMat);
   head.position.set(0, 1.64, 0);
   head.userData.part = "head";
   head.castShadow = true;
-  group.add(head);
+  pivot.add(head);
 
   const jaw = new THREE.Mesh(jawGeo, skinMat);
   jaw.position.set(0, 1.56, 0.01);
   jaw.userData.part = "head";
-  group.add(jaw);
+  pivot.add(jaw);
 
   const nose = new THREE.Mesh(noseGeo, skinMat);
   nose.position.set(0, 1.63, 0.16);
   nose.scale.set(1, 0.7, 1);
   nose.userData.part = "head";
-  group.add(nose);
+  pivot.add(nose);
 
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
   const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
@@ -206,36 +211,36 @@ export function makeCharacter(color: number, name: string): CharacterView {
   const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
   eyeR.position.set(0.07, 1.66, 0.15);
   eyeR.userData.part = "head";
-  group.add(eyeL, eyeR);
+  pivot.add(eyeL, eyeR);
 
   // --- HELMET ---
   const helmet = new THREE.Mesh(helmetGeo, helmetMat);
   helmet.position.set(0, 1.68, -0.01);
   helmet.userData.part = "head";
-  group.add(helmet);
+  pivot.add(helmet);
 
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, 0.02), visorMat);
   visor.position.set(0, 1.61, 0.17);
   visor.userData.part = "head";
-  group.add(visor);
+  pivot.add(visor);
 
   // --- GUN ---
   const gun = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.5), gunMat);
   gun.position.set(0.22, 1.08, 0.32);
   gun.userData.part = "body";
-  group.add(gun);
+  pivot.add(gun);
 
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.08, 6), gunMat);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0.22, 1.11, 0.6);
   barrel.userData.part = "body";
-  group.add(barrel);
+  pivot.add(barrel);
 
   const stockGeo = new THREE.BoxGeometry(0.04, 0.06, 0.08);
   const stock = new THREE.Mesh(stockGeo, gunMat);
   stock.position.set(0.22, 1.06, 0.1);
   stock.userData.part = "body";
-  group.add(stock);
+  pivot.add(stock);
 
   // --- MUZZLE FLASH ---
   const flashGrp = new THREE.Group();
@@ -269,7 +274,7 @@ export function makeCharacter(color: number, name: string): CharacterView {
   }
 
   flashGrp.position.set(0.22, 1.11, 0.68);
-  group.add(flashGrp);
+  pivot.add(flashGrp);
 
   // --- NAME TAG ---
   const nameTex = makeNameTexture(name, color);
@@ -299,9 +304,90 @@ export function makeCharacter(color: number, name: string): CharacterView {
   };
   group.userData._updateFlash = updateFlash;
 
+  // Death / animation state
+  let _alive = true;
+  let _deathAnimating = false;
+  let _deathStartTime = 0;
+  let _moving = false;
+  let _sprinting = false;
+
   const setAlive = (alive: boolean) => {
-    group.visible = alive;
-    nameSprite.visible = alive;
+    if (!alive && _alive && !_deathAnimating) {
+      _deathAnimating = true;
+      _deathStartTime = performance.now();
+    }
+    if (alive) {
+      _deathAnimating = false;
+      group.visible = true;
+      nameSprite.visible = true;
+      pivot.rotation.x = 0;
+      pivot.position.y = 0;
+    }
+    _alive = alive;
+  };
+
+  const die = () => {
+    if (!_alive || _deathAnimating) return;
+    _deathAnimating = true;
+    _deathStartTime = performance.now();
+  };
+
+  const setMoving = (moving: boolean, sprinting: boolean) => {
+    _moving = moving;
+    _sprinting = sprinting;
+  };
+
+  const updateAnimations = (dt: number) => {
+    if (_deathAnimating) {
+      const elapsed = (performance.now() - _deathStartTime) / 1000;
+      const fallDur = 0.5;
+      if (elapsed < fallDur) {
+        const t = elapsed / fallDur;
+        const smooth = t * t * (3 - 2 * t);
+        pivot.rotation.x = -Math.PI / 2 * smooth;
+        pivot.position.y = -t * 0.5;
+      } else if (elapsed < fallDur + 0.5) {
+        // Hold then fade
+        const fadeT = (elapsed - fallDur) / 0.5;
+        group.traverse((c) => {
+          if (c instanceof THREE.Mesh && c.material) {
+            const mats = Array.isArray(c.material) ? c.material : [c.material];
+            for (const m of mats) {
+              if (m.transparent || m === skinMat || m === helmetMat || m === vestMat || m === gunMat || m === bootMat || m === visorMat) {
+                m.transparent = true;
+                m.opacity = 1 - fadeT;
+              }
+            }
+          }
+        });
+      } else {
+        _deathAnimating = false;
+        group.visible = false;
+        // Reset opacity
+        group.traverse((c) => {
+          if (c instanceof THREE.Mesh && c.material) {
+            const mats = Array.isArray(c.material) ? c.material : [c.material];
+            for (const m of mats) {
+              m.opacity = 1;
+            }
+          }
+        });
+      }
+      return;
+    }
+    if (_alive && (_moving || _sprinting)) {
+      const speed = _sprinting ? 14 : 10;
+      const bobAmount = _sprinting ? 0.03 : 0.015;
+      pivot.position.y = Math.sin(performance.now() / 1000 * speed) * bobAmount;
+      if (_sprinting) {
+        pivot.rotation.x = -0.08;
+      } else {
+        pivot.rotation.x += (0 - pivot.rotation.x) * Math.min(1, dt * 5);
+      }
+    } else if (_alive) {
+      pivot.position.y += (0 - pivot.position.y) * Math.min(1, dt * 5);
+      pivot.rotation.x += (0 - pivot.rotation.x) * Math.min(1, dt * 5);
+    }
   };
 
   const dispose = () => {
@@ -310,5 +396,5 @@ export function makeCharacter(color: number, name: string): CharacterView {
     nameTex.dispose();
   };
 
-  return { group, head, body, gun, nameSprite, nameTex, baseColor: color, setFiring, setAlive, dispose };
+  return { group, head, body, gun, nameSprite, nameTex, baseColor: color, setFiring, setAlive, die, setMoving, updateAnimations, dispose };
 }

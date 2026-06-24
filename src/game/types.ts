@@ -57,6 +57,14 @@ export interface RadarBlip {
   firing: boolean;
 }
 
+export interface ChatMessage {
+  id: number;
+  sender: string;
+  text: string;
+  team: "red" | "blue" | null;
+  time: number;
+}
+
 export interface HudState {
   hp: number;
   maxHp: number;
@@ -129,6 +137,10 @@ export interface HudState {
   multiKillTime: number;
   headshotTime: number;
   attachments: AttachmentType[];
+  chatMessages: ChatMessage[];
+  chatOpen: boolean;
+  chatInput: string;
+  controllerConnected: boolean;
 }
 
 export const WEAPON = {

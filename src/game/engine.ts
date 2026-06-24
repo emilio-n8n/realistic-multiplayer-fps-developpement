@@ -5,8 +5,12 @@ import { buildWeaponView } from "./weapon";
 import type { WeaponView } from "./weapon";
 import { makeCharacter } from "./character";
 import type { CharacterView } from "./character";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { COLORS, DEFAULT_LOADOUTS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
-import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData, DomState, SndState, HardcoreSettings, AttachmentType } from "./types";
+import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData, DomState, SndState, HardcoreSettings, AttachmentType, ChatMessage } from "./types";
 import * as Sfx from "./sound";
 import type { Net } from "../net/net";
 import { LocalPlayerManager } from "./local-player";
@@ -43,6 +47,9 @@ interface RemoteActor {
   curYaw: number;
   state: PState;
   prevFiring: boolean;
+  wasAlive: boolean;
+  lastPx: number;
+  lastPz: number;
 }
 
 const BOT_PREFIX = "bot_";
@@ -239,6 +246,21 @@ export class Game {
   netHandler: NetHandler;
   equipment: EquipmentSystem;
 
+  // post-processing
+  private composer: EffectComposer | null = null;
+
+  // controller support
+  gamepadIndex: number | null = null;
+  controllerConnected = false;
+  mouseRightDown = false;
+  controllerADS = false;
+
+  // chat
+  chatMessages: ChatMessage[] = [];
+  chatId = 0;
+  chatOpen = false;
+  chatInput = "";
+
   // internal
   private container: HTMLElement;
   private raf = 0;
@@ -385,6 +407,21 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
+
+    // Bloom post-processing
+    try {
+      const w = this.container.clientWidth;
+      const h = this.container.clientHeight;
+      this.composer = new EffectComposer(this.renderer);
+      const renderPass = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(renderPass);
+      const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.15, 0.4, 0.85);
+      this.composer.addPass(bloomPass);
+      const outputPass = new OutputPass();
+      this.composer.addPass(outputPass);
+    } catch {
+      this.composer = null;
+    }
 
     const hemi = new THREE.HemisphereLight(0xbfd0e0, 0x40382c, 0.7);
     this.scene.add(hemi);
@@ -545,6 +582,43 @@ export class Game {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
+    // Chat handling
+    if (this.chatOpen) {
+      e.preventDefault();
+      if (e.code === "Enter") {
+        this.sendChatMessage(this.chatInput);
+        this.chatInput = "";
+        this.chatOpen = false;
+        this.keys.clear();
+        return;
+      }
+      if (e.code === "Escape") {
+        this.chatInput = "";
+        this.chatOpen = false;
+        this.keys.clear();
+        return;
+      }
+      if (e.code === "Backspace") {
+        this.chatInput = this.chatInput.slice(0, -1);
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        if (this.chatInput.length < 100) {
+          this.chatInput += e.key;
+        }
+        return;
+      }
+      return;
+    }
+
+    // Open chat with Enter
+    if (e.code === "Enter") {
+      this.chatOpen = true;
+      this.chatInput = "";
+      this.keys.clear();
+      return;
+    }
+
     this.keys.add(e.code);
     if (e.code === "KeyR") this.weaponSystem.startReload();
     if (e.code === "KeyV" && this.lp.alive) this.weaponSystem.melee();
@@ -612,11 +686,11 @@ export class Game {
       return;
     }
     if (e.button === 0) this.mouseDown = true;
-    if (e.button === 2) this.lp.ads = true;
+    if (e.button === 2) { this.lp.ads = true; this.mouseRightDown = true; }
   };
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 0) this.mouseDown = false;
-    if (e.button === 2) this.lp.ads = false;
+    if (e.button === 2) { this.lp.ads = false; this.mouseRightDown = false; }
   };
 
   private onPointerLockChange = () => {
@@ -644,10 +718,139 @@ export class Game {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    if (this.composer) this.composer.setSize(w, h);
   };
 
   requestLock() {
     this.renderer.domElement.requestPointerLock?.();
+  }
+
+  // ---------------- controller ----------------
+  private pollGamepad(): void {
+    const gamepads = navigator.getGamepads?.() ?? [];
+    let gp: Gamepad | null = null;
+    for (const g of gamepads) {
+      if (g && g.connected) { gp = g; break; }
+    }
+    this.controllerConnected = !!gp;
+    if (!gp) return;
+
+    const deadzone = 0.15;
+
+    // Left stick → movement
+    const LX = gp.axes[0];
+    const LY = gp.axes[1];
+    const fwd = -LY > deadzone ? -LY : 0;
+    const str = LX > deadzone ? LX : LX < -deadzone ? LX : 0;
+
+    if (fwd > 0) { this.keys.add("KeyW"); this.keys.delete("KeyS"); }
+    else if (fwd < 0) { this.keys.add("KeyS"); this.keys.delete("KeyW"); }
+    else { this.keys.delete("KeyW"); this.keys.delete("KeyS"); }
+
+    if (str > 0) { this.keys.add("KeyD"); this.keys.delete("KeyA"); }
+    else if (str < 0) { this.keys.add("KeyA"); this.keys.delete("KeyD"); }
+    else { this.keys.delete("KeyA"); this.keys.delete("KeyD"); }
+
+    // Right stick → camera
+    const RX = gp.axes[2] || gp.axes[3] || 0;
+    const RY = gp.axes[3] || gp.axes[4] || 0;
+    const sens = 0.003;
+    if (Math.abs(RX) > deadzone) this.lp.yaw -= RX * sens;
+    if (Math.abs(RY) > deadzone) {
+      this.lp.pitch -= RY * sens;
+      this.lp.pitch = Math.max(-1.45, Math.min(1.45, this.lp.pitch));
+    }
+
+    // Right trigger → fire (button 7)
+    if (gp.buttons[7]?.pressed) {
+      if (!this.mouseDown) this.mouseDown = true;
+    } else {
+      this.mouseDown = false;
+    }
+
+    // Left trigger → ADS (button 6)
+    if (gp.buttons[6]?.pressed) {
+      this.keys.add("_ads");
+    } else {
+      this.keys.delete("_ads");
+    }
+
+    // A (0) → jump
+    if (gp.buttons[0]?.pressed) this.keys.add("Space");
+    else this.keys.delete("Space");
+
+    // B (1) → crouch
+    if (gp.buttons[1]?.pressed) this.keys.add("ControlLeft");
+    else this.keys.delete("ControlLeft");
+
+    // X (2) → reload
+    if (gp.buttons[2]?.pressed) this.keys.add("KeyR");
+
+    // Y (3) → switch weapon
+    if (gp.buttons[3]?.pressed) {
+      const next = (this.weaponSystem.weaponIndex + 1) % WEAPON_LIST.length;
+      this.weaponSystem.switchWeapon(next);
+    }
+
+    // Left bumper (4) → tactical (Q)
+    if (gp.buttons[4]?.pressed) this.keys.add("KeyQ");
+    else this.keys.delete("KeyQ");
+
+    // Right bumper (5) → lethal (G)
+    if (gp.buttons[5]?.pressed) this.keys.add("KeyG");
+    else this.keys.delete("KeyG");
+
+    // Left stick click (10) → sprint
+    if (gp.buttons[10]?.pressed) this.keys.add("ShiftLeft");
+    else this.keys.delete("ShiftLeft");
+
+    // Right stick click (11) → melee
+    if (gp.buttons[11]?.pressed) this.weaponSystem.melee();
+
+    // D-pad up (12) → killstreak
+    if (gp.buttons[12]?.pressed && this.lp.alive) {
+      if (this.killstreaksReady.length > 0) {
+        const ks = this.killstreaksReady[0];
+        this.damage.useKillstreak(ks);
+        this.killstreaksReady = this.killstreaksReady.filter(k => k !== ks);
+      }
+    }
+    // D-pad left (14) → previous weapon
+    if (gp.buttons[14]?.pressed) {
+      const prev = (this.weaponSystem.weaponIndex - 1 + WEAPON_LIST.length) % WEAPON_LIST.length;
+      this.weaponSystem.switchWeapon(prev);
+    }
+    // D-pad right (15) → next weapon
+    if (gp.buttons[15]?.pressed) {
+      const next = (this.weaponSystem.weaponIndex + 1) % WEAPON_LIST.length;
+      this.weaponSystem.switchWeapon(next);
+    }
+  }
+
+  // ---------------- chat ----------------
+  sendChatMessage(text: string) {
+    text = text.trim();
+    if (!text) return;
+    let team: "red" | "blue" | null = null;
+    let msgText = text;
+    if (text.startsWith("/t ")) {
+      team = this.selfTeam;
+      msgText = text.slice(3);
+    }
+    const msg: ChatMessage = {
+      id: this.chatId++,
+      sender: this.lp.name,
+      text: msgText,
+      team,
+      time: performance.now(),
+    };
+    this.chatMessages.push(msg);
+    if (this.chatMessages.length > 50) this.chatMessages.splice(0, this.chatMessages.length - 50);
+    if (this.mode === "host" || this.mode === "solo") {
+      this.netHandler.broadcastAll({ t: "chat", msg });
+    } else if (this.net) {
+      this.net.send({ t: "chat", msg });
+    }
   }
 
   // ---------------- lifecycle ----------------
@@ -669,11 +872,26 @@ export class Game {
     const dt = Math.min(this.clock.getDelta(), 0.05);
     this.now = this.clock.elapsedTime;
     this.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   };
 
   private update(dt: number) {
-    if (!this.paused) {
+    // Controller input (runs even when paused for connection detection)
+    this.pollGamepad();
+
+    if (!this.paused && !this.chatOpen) {
+      // Controller ADS
+      if (this.keys.has("_ads")) {
+        this.lp.ads = true;
+      }
+      if (this.controllerConnected && !this.keys.has("_ads") && !this.mouseRightDown) {
+        this.lp.ads = false;
+      }
+
       if (this.matchPhase === "countdown") {
         if (this.countdownStartAt === 0) this.countdownStartAt = this.now;
         const elapsed = this.now - this.countdownStartAt;
@@ -739,7 +957,7 @@ export class Game {
       view.group.userData.actorId = st.id;
       view.setAlive(st.alive);
       this.scene.add(view.group);
-      a = { id: st.id, view, curPos: new THREE.Vector3(st.px, st.py, st.pz), curYaw: st.yaw, state: st, prevFiring: false };
+      a = { id: st.id, view, curPos: new THREE.Vector3(st.px, st.py, st.pz), curYaw: st.yaw, state: st, prevFiring: false, wasAlive: st.alive, lastPx: st.px, lastPz: st.pz };
       this.remote.set(st.id, a);
     }
     return a;
@@ -766,7 +984,20 @@ export class Game {
       a.curYaw += dy * lerp;
       a.view.group.position.set(a.curPos.x, a.curPos.y, a.curPos.z);
       a.view.group.rotation.y = a.curYaw;
+      // Track alive state changes for death animation
+      if (!st.alive && a.wasAlive) {
+        a.view.die();
+      }
+      a.wasAlive = st.alive;
       a.view.setAlive(st.alive);
+      // Movement animation
+      const xd = st.px - a.lastPx;
+      const zd = st.pz - a.lastPz;
+      const moving = Math.hypot(xd, zd) > 0.01;
+      a.view.setMoving(moving, false);
+      a.lastPx = st.px;
+      a.lastPz = st.pz;
+      a.view.updateAnimations(dt);
       if (a.view.group.userData._updateFlash) (a.view.group.userData._updateFlash as () => void)();
       if (st.firing && !a.prevFiring) {
         a.view.setFiring(true, this.now);
@@ -914,6 +1145,10 @@ export class Game {
       multiKillTime: this.multiKillTime,
       headshotTime: this.headshotTime,
       attachments: this.weaponSystem.attachments,
+      chatMessages: this.chatMessages,
+      chatOpen: this.chatOpen,
+      chatInput: this.chatInput,
+      controllerConnected: this.controllerConnected,
     };
     this.onHud(state);
   }
@@ -1709,6 +1944,9 @@ export class Game {
       this.renderer.domElement.remove();
     } catch {
       /* ignore */
+    }
+    if (this.composer) {
+      this.composer = null;
     }
   }
 }

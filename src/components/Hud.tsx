@@ -61,6 +61,10 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
 
   const flashEnd: number = (hud as any).flashEnd ?? 0;
   const sprintEnd: number = (hud as any).sprintEnd ?? 0;
+  const chatMessages = hud.chatMessages;
+  const chatOpen = hud.chatOpen;
+  const chatInput = hud.chatInput;
+  const controllerConnected = hud.controllerConnected;
   const weaponIndex: number = (hud as any).weaponIndex ?? 0;
   const weaponList: string[] = (hud as any).weaponList ?? [];
   const killstreaksReady: string[] = (hud as any).killstreaksReady ?? [];
@@ -478,6 +482,47 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
         )}
       </div>}
 
+      {/* controller indicator */}
+      {controllerConnected && (
+        <div className="absolute top-14 right-3 flex items-center gap-1 rounded bg-black/40 px-2 py-1 text-xs text-white/60">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21.47 6.5c-.08-.02-4.5-.5-9.47-.5-4.97 0-9.39.48-9.47.5a2.6 2.6 0 0 0-2.53 2.67v6.66a2.6 2.6 0 0 0 2.53 2.67c.3 0 .59-.08.86-.22l3.78-2.12a1.5 1.5 0 0 1 .75-.2h3.1a1.5 1.5 0 0 1 .75.2l3.78 2.12c.27.14.56.22.86.22a2.6 2.6 0 0 0 2.53-2.67V9.17a2.6 2.6 0 0 0-2.47-2.67zM11.5 11H9v2.5a.5.5 0 0 1-1 0V11H5.5a.5.5 0 0 1 0-1H8V7.5a.5.5 0 0 1 1 0V10h2.5a.5.5 0 0 1 0 1zm6.5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm-2-2a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+          </svg>
+          <span>Manette</span>
+        </div>
+      )}
+
+      {/* chat messages */}
+      {chatMessages.length > 0 && (
+        <div className="absolute bottom-32 left-4 flex flex-col gap-1 max-w-xs pointer-events-none">
+          {chatMessages.slice(-8).map((m) => {
+            const age = (now - m.time) / 1000;
+            const opacity = Math.max(0.2, 1 - age / 10);
+            return (
+              <div key={m.id} className="rounded bg-black/50 px-2 py-1 text-xs backdrop-blur" style={{ opacity }}>
+                <span className="font-bold text-amber-300">{m.sender}</span>
+                <span className="text-white/40 mx-1">&gt;</span>
+                <span className="text-white/80">{m.text}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* chat input */}
+      {chatOpen && (
+        <div className="absolute bottom-24 left-4 w-80 pointer-events-auto">
+          <div className="rounded bg-black/70 px-3 py-2 ring-1 ring-white/20 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-400 font-bold">[Tous]</span>
+              <span className="text-white/30">&gt;</span>
+              <span className="text-sm text-white flex-1 outline-none">{chatInput}</span>
+              <span className="animate-pulse text-white/50">|</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* mute toggle */}
       {!isHardcore && (
       <button
@@ -750,15 +795,37 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
               <div className="mt-5 rounded-xl bg-black/40 p-3 text-center text-sm text-white/60">{status}</div>
             )}
 
-            <div className="mt-5 grid grid-cols-2 gap-2 text-xs text-white/60">
-              <Ctl k="Z Q S D" v="Déplacement" />
-              <Ctl k="Souris" v="Viser" />
-              <Ctl k="Clic G" v="Tirer" />
-              <Ctl k="Shift" v="Sprint" />
-              <Ctl k="Ctrl / C" v="Accroupi" />
-              <Ctl k="Espace" v="Sauter" />
-              <Ctl k="R" v="Recharger" />
-              <Ctl k="Tab" v="Scores" />
+            <div className="mt-3 text-xs uppercase tracking-widest text-white/40">
+              {controllerConnected ? "Contrôles (Manette)" : "Contrôles (Clavier/Souris)"}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-white/60">
+              {controllerConnected ? (
+                <>
+                  <Ctl k="Joystick G" v="Déplacement" />
+                  <Ctl k="Joystick D" v="Viser" />
+                  <Ctl k="Gâchette D" v="Tirer" />
+                  <Ctl k="Gâchette G" v="Viser (ADS)" />
+                  <Ctl k="A" v="Sauter" />
+                  <Ctl k="B" v="Accroupi" />
+                  <Ctl k="X" v="Recharger" />
+                  <Ctl k="Y" v="Arme suivante" />
+                  <Ctl k="LB / RB" v="Tactique / Létal" />
+                  <Ctl k="Cliquer G" v="Sprint" />
+                  <Ctl k="Cliquer D" v="Combat" />
+                  <Ctl k="DPad Gau/D" v="Arme préc./suiv." />
+                </>
+              ) : (
+                <>
+                  <Ctl k="Z Q S D" v="Déplacement" />
+                  <Ctl k="Souris" v="Viser" />
+                  <Ctl k="Clic G" v="Tirer" />
+                  <Ctl k="Shift" v="Sprint" />
+                  <Ctl k="Ctrl / C" v="Accroupi" />
+                  <Ctl k="Espace" v="Sauter" />
+                  <Ctl k="R" v="Recharger" />
+                  <Ctl k="Tab" v="Scores" />
+                </>
+              )}
             </div>
 
             <button
