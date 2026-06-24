@@ -6,7 +6,7 @@ import type { WeaponView } from "./weapon";
 import { makeCharacter } from "./character";
 import type { CharacterView } from "./character";
 import { COLORS, DEFAULT_LOADOUTS, PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
-import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData, DomState, SndState, HardcoreSettings } from "./types";
+import type { HudState, KillFeedItem, PState, RadarBlip, ScoreRow, EquipmentType, KillstreakType, PerkType, WeaponProgressionData, DomState, SndState, HardcoreSettings, AttachmentType } from "./types";
 import * as Sfx from "./sound";
 import type { Net } from "../net/net";
 import { LocalPlayerManager } from "./local-player";
@@ -33,6 +33,7 @@ export interface GameOpts {
   onLockChange: (locked: boolean) => void;
   onEvent: (e: { type: string; data?: unknown }) => void;
   hardcore?: boolean;
+  onCareerStatsUpdate?: (data: { kills: number; deaths: number; headshots: number; timePlayed: number; weapons: WeaponProgressionData; won: boolean; playerXp: number; playerLevel: number }) => void;
 }
 
 interface RemoteActor {
@@ -59,6 +60,7 @@ export class Game {
   onHud: (s: HudState) => void;
   onLockChange: (locked: boolean) => void;
   onEvent: (e: { type: string; data?: unknown }) => void;
+  onCareerStatsUpdate: ((data: { kills: number; deaths: number; headshots: number; timePlayed: number; weapons: WeaponProgressionData; won: boolean; playerXp: number; playerLevel: number }) => void) | null = null;
 
   renderer!: THREE.WebGLRenderer;
   scene!: THREE.Scene;
@@ -255,6 +257,7 @@ export class Game {
     this.selfId = this.net?.selfId || (opts.mode === "solo" ? "you" : "host");
     this.lp.name = opts.name || "Player";
     this.lp.color = opts.color;
+    this.onCareerStatsUpdate = opts.onCareerStatsUpdate ?? null;
 
     // instantiate sub-managers
     this.localPlayer = new LocalPlayerManager(this);
@@ -277,6 +280,7 @@ export class Game {
     this.activePerks = loadout.perks;
     this.equipmentLethal = loadout.lethal;
     this.equipmentTactical = loadout.tactical;
+    this.weaponSystem.attachments = Object.keys(loadout.attachments).filter(k => (loadout.attachments as any)[k]) as AttachmentType[];
     if (this.activePerks.includes("tank")) {
       this.lp.maxHp = PLAYER.maxHp + 25;
       this.lp.hp = this.lp.maxHp;
@@ -471,7 +475,7 @@ export class Game {
   }
 
   private initWeapon() {
-    this.weapon = buildWeaponView(this.weaponSystem.weaponType);
+    this.weapon = buildWeaponView(this.weaponSystem.weaponType, this.weaponSystem.attachments);
     this.weapon.group.position.set(0.17, -0.15, -0.42);
     this.weapon.group.rotation.y = Math.PI;
     this.camera.add(this.weapon.group);
@@ -479,9 +483,9 @@ export class Game {
     this.fx.createDeathOverlay();
   }
 
-  rebuildWeapon(type: import("./types").WeaponType) {
+  rebuildWeapon(type: import("./types").WeaponType, attachments?: import("./types").AttachmentType[]) {
     this.camera.remove(this.weapon.group);
-    this.weapon = buildWeaponView(type);
+    this.weapon = buildWeaponView(type, attachments);
     this.weapon.group.position.set(0.17, -0.15, -0.42);
     this.weapon.group.rotation.y = Math.PI;
     this.camera.add(this.weapon.group);
@@ -909,6 +913,7 @@ export class Game {
       multiKillMessage: this.multiKillMessage,
       multiKillTime: this.multiKillTime,
       headshotTime: this.headshotTime,
+      attachments: this.weaponSystem.attachments,
     };
     this.onHud(state);
   }
@@ -1049,6 +1054,7 @@ export class Game {
     }
     this.damage.flashMessage("TEMPS ÉCOULÉ!");
     this.pushHud(true);
+    this.emitCareerStats(this.matchResult?.winner === (this.tdm ? (this.selfTeam === "red" ? "Rouge" : "Bleu") : this.lp.name));
   }
 
   // ---------------- match flow ----------------
@@ -1063,6 +1069,7 @@ export class Game {
         this.matchResult = { winner, stats: this.buildScoreboard(), teamKillsRed: this.domState.scoreRed, teamKillsBlue: this.domState.scoreBlue };
         this.damage.flashMessage(`${winner} GAGNE!`);
         this.pushHud(true);
+        this.emitCareerStats(winner === (this.selfTeam === "red" ? "Rouge" : "Bleu"));
       }
       return;
     }
@@ -1082,6 +1089,7 @@ export class Game {
       for (const p of this.netState.values()) if (p.isBot) p.respawnAt = 1e12;
       this.damage.flashMessage("PARTIE TERMINÉE");
       this.pushHud(true);
+      this.emitCareerStats(true);
       return;
     }
 
@@ -1102,6 +1110,7 @@ export class Game {
         };
         this.damage.flashMessage("PARTIE TERMINÉE");
         this.pushHud(true);
+        this.emitCareerStats(this.matchResult?.winner === this.lp.name);
       }
     }
   }
@@ -1122,6 +1131,7 @@ export class Game {
       this.matchResult = { winner: winner === "red" ? "Rouge" : "Bleu", stats: this.buildScoreboard(), teamKillsRed: this.teamKillsRed, teamKillsBlue: this.teamKillsBlue };
       this.damage.flashMessage(`ÉQUIPE ${winner === "red" ? "ROUGE" : "BLEUE"} GAGNE!`);
       this.pushHud(true);
+      this.emitCareerStats(winner === this.selfTeam);
     }
   }
 
@@ -1309,6 +1319,7 @@ export class Game {
           this.matchResult = { winner, stats: this.buildScoreboard() };
           this.damage.flashMessage(`${winner} GAGNE LA PARTIE!`);
           this.pushHud(true);
+          this.emitCareerStats(winner === (this.selfTeam === "red" ? "Rouge" : "Bleu"));
           return;
         }
         this.startSndRound();
@@ -1392,6 +1403,24 @@ export class Game {
     this.defusing = false;
     this.hasBomb = false;
     this.pushHud(true);
+  }
+
+  private emitCareerStats(won: boolean) {
+    if (!this.onCareerStatsUpdate) return;
+    let headshots = 0;
+    for (const w of WEAPON_LIST) {
+      headshots += this.weaponXp[w]?.headshots ?? 0;
+    }
+    this.onCareerStatsUpdate({
+      kills: this.lp.kills,
+      deaths: this.lp.deaths,
+      headshots,
+      timePlayed: this.matchTime,
+      weapons: { ...this.weaponXp },
+      won,
+      playerXp: this.playerXp,
+      playerLevel: this.playerLevel,
+    });
   }
 
   restartMatch() {

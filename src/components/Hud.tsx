@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { HudState, PerkType } from "../game/types";
-import { PERK_DEFS } from "../game/types";
+import type { HudState, PerkType, AttachmentType } from "../game/types";
+import { PERK_DEFS, ATTACHMENT_DEFS } from "../game/types";
 import type { GameMode } from "../game/engine";
 import { isAudioEnabled, setAudioEnabled } from "../game/sound";
 
@@ -81,6 +81,7 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
   const plantProgress = hud.plantProgress;
   const defusing = hud.defusing;
   const defuseProgress = hud.defuseProgress;
+  const attachments: AttachmentType[] = (hud as any).attachments ?? [];
   const hardcoreSettings = hud.hardcore;
   const isHardcore = hardcoreSettings?.enabled ?? false;
 
@@ -451,6 +452,13 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
           </div>
           <span className="text-xs uppercase tracking-wider text-white/70">{hud.weaponName}</span>
         </div>
+        {attachments.length > 0 && (
+          <div className="flex justify-end gap-1 mb-1">
+            {attachments.map((a) => (
+              <span key={a} className="text-[10px] text-white/50" title={ATTACHMENT_DEFS[a]?.name}>{ATTACHMENT_DEFS[a]?.icon} {ATTACHMENT_DEFS[a]?.name}</span>
+            ))}
+          </div>
+        )}
         <div className="text-xs uppercase tracking-widest text-white/60">{hud.reloading ? "Rechargement…" : "Munitions"}</div>
         <div className="flex items-end justify-end gap-2">
           <span
@@ -647,6 +655,22 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave, 
                   </div>
                 );
               })()}
+
+            {/* career progression at match end */}
+            <div className="mt-4 rounded-lg bg-amber-500/10 p-3 ring-1 ring-amber-400/20">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-amber-300/80">XP GAGNÉ: <b className="text-amber-200">+{hud.kills * 10}</b></span>
+                <span className="text-purple-300/80">NIVEAU <b className="text-purple-200">{playerLevel}</b></span>
+              </div>
+              {weaponProgression && weaponProgression[hud.weaponType] && (() => {
+                const wp = weaponProgression[hud.weaponType];
+                return (
+                  <div className="mt-1 h-1.5 bg-black/40 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-amber-500 to-purple-500 transition-all" style={{ width: `${(wp.xp / wp.xpToNext) * 100}%` }} />
+                  </div>
+                );
+              })()}
+            </div>
 
             {/* stats table */}
             <div className="mt-4 max-h-[200px] overflow-y-auto">

@@ -7,8 +7,8 @@ import type { GameMode } from "./game/engine";
 import { Net } from "./net/net";
 import type { NetCallbacks } from "./net/net";
 import * as Sfx from "./game/sound";
-import type { HudState } from "./game/types";
-import { COLORS } from "./game/types";
+import type { HudState, CareerStats } from "./game/types";
+import { COLORS, loadCareerStats, saveCareerStats, WEAPON_LIST } from "./game/types";
 
 interface Session {
   mode: GameMode;
@@ -38,6 +38,9 @@ export default function App() {
     error: null,
   });
   const [lobbyPeers, setLobbyPeers] = useState<LobbyPeer[]>([]);
+  const [careerStats, setCareerStats] = useState<CareerStats>(() => loadCareerStats());
+  const [mapVotes, setMapVotes] = useState<number[]>([0, 0, 0]);
+  const [votedMap, setVotedMap] = useState<number | undefined>(undefined);
 
   const sessionRef = useRef<Session | null>(null);
   const netRef = useRef<Net | null>(null);
@@ -172,6 +175,33 @@ export default function App() {
       onHud: setHud,
       onLockChange: () => {},
       onEvent: handleEngineEvent,
+      onCareerStatsUpdate: (data) => {
+        setCareerStats((prev) => {
+          const next = { ...prev };
+          next.gamesPlayed++;
+          if (data.won) next.gamesWon++;
+          next.totalKills += data.kills;
+          next.totalDeaths += data.deaths;
+          next.totalHeadshots += data.headshots;
+          next.totalTimePlayed += data.timePlayed;
+          next.totalXP += data.playerXp;
+          if (data.playerLevel > next.playerLevel) next.playerLevel = data.playerLevel;
+          // Merge weapon stats
+          for (const w of WEAPON_LIST) {
+            const cws = next.weaponStats[w] ?? { kills: 0, headshots: 0, xp: 0, level: 1 };
+            const gws = data.weapons[w];
+            if (gws) {
+              cws.kills += gws.kills;
+              cws.headshots += gws.headshots;
+              cws.xp += gws.xp;
+              if (gws.level > cws.level) cws.level = gws.level;
+            }
+            next.weaponStats[w] = cws;
+          }
+          saveCareerStats(next);
+          return next;
+        });
+      },
     });
     gameRef.current = game;
     game.start();
@@ -192,7 +222,7 @@ export default function App() {
   }, [lobbyPeers]);
 
   if (screen === "menu") {
-    return <Menu onStartSolo={startSolo} onHost={startHost} onJoin={startJoin} error={conn.error} connecting={connecting} />;
+    return <Menu onStartSolo={startSolo} onHost={startHost} onJoin={startJoin} error={conn.error} connecting={connecting} careerStats={careerStats} />;
   }
 
   if (screen === "lobby") {
@@ -209,6 +239,17 @@ export default function App() {
         loadoutName={sessionRef.current?.loadoutIndex !== undefined ? ["Assaut", "Tireur", "Support", "Éclaireur", "Démolisseur"][sessionRef.current.loadoutIndex] : undefined}
         onStart={handleLobbyStart}
         onLeave={leave}
+        votes={mapVotes}
+        votedMap={votedMap}
+        onVoteMap={(i) => {
+          setVotedMap(i);
+          setMapVotes((prev) => {
+            const next = [...prev];
+            if (votedMap !== undefined) next[votedMap] = Math.max(0, next[votedMap] - 1);
+            next[i] = (next[i] || 0) + 1;
+            return next;
+          });
+        }}
       />
     );
   }

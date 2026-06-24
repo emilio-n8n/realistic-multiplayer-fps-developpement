@@ -454,6 +454,22 @@ export function uiHover() {
 }
 
 // ---------------------------------------------------------------------------
+export function attachmentEquip() {
+  if (!ctx || !enabled) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "square";
+  o.frequency.setValueAtTime(800, t);
+  o.frequency.exponentialRampToValueAtTime(1200, t + 0.05);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.08, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  o.connect(g).connect(master!);
+  o.start(t);
+  o.stop(t + 0.1);
+}
+
+// ---------------------------------------------------------------------------
 // SMG SHOT — high-pitched, short pop with minimal sub-bass
 // ---------------------------------------------------------------------------
 export function smgShot(distance = 0) {

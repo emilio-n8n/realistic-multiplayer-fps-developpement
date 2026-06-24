@@ -128,6 +128,7 @@ export interface HudState {
   multiKillMessage: string | null;
   multiKillTime: number;
   headshotTime: number;
+  attachments: AttachmentType[];
 }
 
 export const WEAPON = {
@@ -187,6 +188,35 @@ export const GRENADE = {
 export const COLORS = [
   0x4f9bff, 0xff5a5a, 0x47d185, 0xffb13d, 0xb06bff, 0xff5ac8, 0x36e0e0, 0xe8e8e8,
 ];
+
+// ---------- Attachment types ----------
+
+export type AttachmentType = "optic_reddot" | "optic_holographic" | "optic_sniper" | "suppressor" | "grip" | "extended_mag" | "laser";
+
+export interface AttachmentDef {
+  name: string;
+  icon: string;
+  slot: "optic" | "underbarrel" | "magazine" | "muzzle" | "other";
+  adsSpreadMult?: number;
+  hipSpreadMult?: number;
+  recoilMult?: number;
+  magSizeMult?: number;
+  reloadTimeMult?: number;
+  rangeMult?: number;
+  soundRangeMult?: number;
+  adsSpeedMult?: number;
+  damageMult?: number;
+}
+
+export const ATTACHMENT_DEFS: Record<AttachmentType, AttachmentDef> = {
+  optic_reddot: { name: "Red Dot", icon: "🔴", slot: "optic", adsSpreadMult: 0.8 },
+  optic_holographic: { name: "Holo", icon: "🔵", slot: "optic", adsSpreadMult: 0.75, adsSpeedMult: 1.1 },
+  optic_sniper: { name: "Lunette x4", icon: "🔭", slot: "optic", adsSpreadMult: 0.5, adsSpeedMult: 1.3 },
+  suppressor: { name: "Silencieux", icon: "🔇", slot: "muzzle", damageMult: 0.9, soundRangeMult: 0.5, rangeMult: 0.9 },
+  grip: { name: "Poignée", icon: "🔧", slot: "underbarrel", recoilMult: 0.8, adsSpeedMult: 1.1 },
+  extended_mag: { name: "Chargeur +50%", icon: "📦", slot: "magazine", magSizeMult: 1.5, reloadTimeMult: 1.15 },
+  laser: { name: "Laser", icon: "🔦", slot: "underbarrel", hipSpreadMult: 0.85 },
+};
 
 // ---------- Weapon types ----------
 
@@ -284,14 +314,15 @@ export interface Loadout {
   lethal: EquipmentType;
   tactical: EquipmentType;
   perks: PerkType[];
+  attachments: Partial<Record<AttachmentType, true>>;
 }
 
 export const DEFAULT_LOADOUTS: Loadout[] = [
-  { name: "Assaut",    primary: "ar15",    secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["gunner", "tank"] },
-  { name: "Tireur",    primary: "sniper",  secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["scout", "ninja"] },
-  { name: "Support",   primary: "smg",     secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["tank", "demolition"] },
-  { name: "Éclaireur", primary: "shotgun", secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["ninja", "scout"] },
-  { name: "Démolisseur", primary: "ar15",  secondary: "shotgun", lethal: "frag", tactical: "flash", perks: ["demolition", "gunner"] },
+  { name: "Assaut",    primary: "ar15",    secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["gunner", "tank"], attachments: { optic_reddot: true, grip: true } },
+  { name: "Tireur",    primary: "sniper",  secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["scout", "ninja"], attachments: { optic_sniper: true } },
+  { name: "Support",   primary: "smg",     secondary: "pistol", lethal: "frag", tactical: "flash", perks: ["tank", "demolition"], attachments: { extended_mag: true, laser: true } },
+  { name: "Éclaireur", primary: "shotgun", secondary: "pistol", lethal: "claymore", tactical: "smoke", perks: ["ninja", "scout"], attachments: { laser: true } },
+  { name: "Démolisseur", primary: "ar15",  secondary: "shotgun", lethal: "frag", tactical: "flash", perks: ["demolition", "gunner"], attachments: { suppressor: true, extended_mag: true } },
 ];
 
 // ---------- Weapon progression ----------
@@ -345,4 +376,48 @@ export interface HardcoreSettings {
   noCrosshair: boolean;
   noRadar: boolean;
   headshotOnly: boolean;
+}
+
+// ---------- Map voting ----------
+
+export const MAP_LIST = ["Frontline Arena"];
+
+export interface MapVote {
+  mapIndex: number;
+  count: number;
+}
+
+// ---------- Career stats ----------
+
+export interface CareerStats {
+  gamesPlayed: number;
+  gamesWon: number;
+  totalKills: number;
+  totalDeaths: number;
+  totalHeadshots: number;
+  totalTimePlayed: number;
+  totalXP: number;
+  playerLevel: number;
+  weaponStats: Record<WeaponType, { kills: number; headshots: number; xp: number; level: number }>;
+}
+
+export function getDefaultCareer(): CareerStats {
+  return {
+    gamesPlayed: 0, gamesWon: 0, totalKills: 0, totalDeaths: 0,
+    totalHeadshots: 0, totalTimePlayed: 0, totalXP: 0, playerLevel: 1,
+    weaponStats: {} as any,
+  };
+}
+
+export function loadCareerStats(): CareerStats {
+  try {
+    const data = localStorage.getItem("frontline_career");
+    return data ? JSON.parse(data) : getDefaultCareer();
+  } catch { return getDefaultCareer(); }
+}
+
+export function saveCareerStats(stats: CareerStats): void {
+  try {
+    localStorage.setItem("frontline_career", JSON.stringify(stats));
+  } catch { /* ignore */ }
 }

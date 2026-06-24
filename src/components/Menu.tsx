@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { COLORS, DEFAULT_LOADOUTS, PERK_DEFS, WEAPON_NAMES } from "../game/types";
+import { COLORS, DEFAULT_LOADOUTS, PERK_DEFS, WEAPON_NAMES, ATTACHMENT_DEFS } from "../game/types";
+import type { CareerStats } from "../game/types";
+import { loadCareerStats } from "../game/types";
 
 interface Props {
   onStartSolo: (name: string, color: number, bots: number, gameMode: string, hardcore: boolean, team: "red" | "blue", loadoutIndex?: number) => void;
@@ -7,11 +9,12 @@ interface Props {
   onJoin: (name: string, color: number, code: string) => void;
   error: string | null;
   connecting: boolean;
+  careerStats?: CareerStats;
 }
 
 type Tab = "solo" | "host" | "join";
 
-export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }: Props) {
+export default function Menu({ onStartSolo, onHost, onJoin, error, connecting, careerStats }: Props) {
   const [tab, setTab] = useState<Tab>("solo");
   const [name, setName] = useState("Joueur");
   const [color, setColor] = useState(COLORS[0]);
@@ -21,6 +24,7 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
   const [hardcore, setHardcore] = useState(false);
   const [team, setTeam] = useState<"red" | "blue">("red");
   const [loadoutIndex, setLoadoutIndex] = useState(0);
+  const [showStats, setShowStats] = useState(false);
 
   const isTeamMode = gameMode === "tdm" || gameMode === "dom" || gameMode === "snd";
 
@@ -83,6 +87,7 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
           <div className="hidden items-center gap-2 text-xs text-white/40 sm:flex">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
             Serveur P2P en ligne
+            <button onClick={() => setShowStats(true)} className="ml-2 rounded bg-white/10 px-2 py-1 text-white/60 hover:bg-white/20 hover:text-white/80">STATS</button>
           </div>
         </div>
 
@@ -239,6 +244,11 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                             <span key={p} className="text-base">{PERK_DEFS[p].icon}</span>
                           ))}
                         </div>
+                        <div className="mt-1 flex justify-center gap-0.5">
+                          {(Object.keys(loadout.attachments) as any[]).map((a) => (
+                            <span key={a} className="text-[9px]" title={ATTACHMENT_DEFS[a as keyof typeof ATTACHMENT_DEFS]?.name}>{ATTACHMENT_DEFS[a as keyof typeof ATTACHMENT_DEFS]?.icon}</span>
+                          ))}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -302,6 +312,73 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
           Astuce : clique sur l'écran pour verrouiller la souris · Échap pour mettre en pause
         </div>
       </div>
+
+      {/* Stats Modal */}
+      {showStats && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md" onClick={() => setShowStats(false)}>
+          <div className="w-[460px] max-w-[92vw] rounded-2xl border border-white/10 bg-zinc-900/90 p-7 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-center text-2xl font-black tracking-tight text-white">STATISTIQUES DE CARRIÈRE</h2>
+            {careerStats ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-lg bg-white/5 p-3">
+                    <div className="text-2xl font-black text-amber-400">{careerStats.playerLevel}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/40">Niveau</div>
+                  </div>
+                  <div className="rounded-lg bg-white/5 p-3">
+                    <div className="text-2xl font-black text-white">{careerStats.gamesPlayed}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/40">Parties</div>
+                  </div>
+                  <div className="rounded-lg bg-white/5 p-3">
+                    <div className="text-2xl font-black text-emerald-400">{careerStats.gamesWon}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/40">Victoires</div>
+                  </div>
+                </div>
+                <div className="flex gap-4 rounded-lg bg-white/5 p-3 text-sm">
+                  <div className="flex-1 text-center">
+                    <div className="text-white/40">K/D</div>
+                    <div className="text-lg font-bold text-white">
+                      {careerStats.totalDeaths > 0 ? (careerStats.totalKills / careerStats.totalDeaths).toFixed(2) : careerStats.totalKills > 0 ? "∞" : "0.00"}
+                    </div>
+                  </div>
+                  <div className="flex-1 text-center">
+                    <div className="text-white/40">Kills</div>
+                    <div className="text-lg font-bold text-emerald-400">{careerStats.totalKills}</div>
+                  </div>
+                  <div className="flex-1 text-center">
+                    <div className="text-white/40">Headshots</div>
+                    <div className="text-lg font-bold text-yellow-400">{careerStats.totalHeadshots}</div>
+                  </div>
+                </div>
+                <div className="rounded-lg bg-white/5 p-3">
+                  <div className="mb-2 text-xs uppercase tracking-wider text-white/40">XP Totale</div>
+                  <div className="h-2 bg-black/60 rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-400 transition-all" style={{ width: `${(careerStats.totalXP % 100) / 100 * 100}%` }} />
+                  </div>
+                  <div className="mt-1 text-xs text-white/40 text-center">{careerStats.totalXP} XP</div>
+                </div>
+                <div className="rounded-lg bg-white/5 p-3">
+                  <div className="text-xs uppercase tracking-wider text-white/40 mb-2">Armes</div>
+                  {(["ar15", "smg", "shotgun", "sniper", "pistol"] as const).map((w) => {
+                    const ws = careerStats.weaponStats[w];
+                    return ws ? (
+                      <div key={w} className="flex items-center justify-between py-1 text-sm border-b border-white/5 last:border-0">
+                        <span className="text-white/70">{WEAPON_NAMES[w]}</span>
+                        <span className="text-white/40 text-xs">K:{ws.kills} T:{ws.headshots} Niv.{ws.level}</span>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 text-center text-white/40">Aucune statistique</div>
+            )}
+            <button onClick={() => setShowStats(false)} className="mt-5 w-full rounded-lg bg-amber-500 py-3 font-bold text-black hover:bg-amber-400">
+              FERMER
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

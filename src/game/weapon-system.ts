@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { PLAYER, WEAPON_LIST, WEAPON_STATS } from "./types";
-import type { WeaponType } from "./types";
+import { PLAYER, WEAPON_LIST, WEAPON_STATS, ATTACHMENT_DEFS } from "./types";
+import type { WeaponType, AttachmentType } from "./types";
 import * as Sfx from "./sound";
 import type { Game } from "./engine";
 
@@ -16,6 +16,7 @@ export class WeaponSystem {
   swapTimer = 0;
   sprintBlock = false;
   private sprintLower = 0;
+  attachments: AttachmentType[] = [];
 
   constructor(private game: Game) {
     this.ammo = WEAPON_LIST.map((t) => WEAPON_STATS[t].magSize);
@@ -34,7 +35,7 @@ export class WeaponSystem {
     this.loadAmmo();
     const game = this.game;
     game.lp.reloading = false;
-    game.rebuildWeapon(this.weaponType);
+    game.rebuildWeapon(this.weaponType, this.attachments);
     game.pushHud(true);
   }
 
@@ -48,6 +49,10 @@ export class WeaponSystem {
     const lp = this.game.lp;
     lp.ammo = this.ammo[this.weaponIndex];
     lp.reserve = this.reserve[this.weaponIndex];
+    // Clamp ammo to effective mag size
+    const stats = WEAPON_STATS[this.weaponType];
+    const effMag = this.getEffectiveMagSize(stats.magSize);
+    if (lp.ammo > effMag) lp.ammo = effMag;
   }
 
   melee() {
@@ -126,8 +131,12 @@ export class WeaponSystem {
     game.camera.rotation.y = lp.yaw + game.recoil.yaw;
     game.camera.rotation.x = lp.pitch + game.recoil.pitch;
 
+    let adsSpeed = 10;
+    if (this.hasAttach("optic_holographic")) adsSpeed /= ATTACHMENT_DEFS.optic_holographic.adsSpeedMult!;
+    if (this.hasAttach("optic_sniper")) adsSpeed /= ATTACHMENT_DEFS.optic_sniper.adsSpeedMult!;
+    if (this.hasAttach("grip")) adsSpeed /= ATTACHMENT_DEFS.grip.adsSpeedMult!;
     const targetFov = lp.ads ? 50 : 78;
-    game.camera.fov += (targetFov - game.camera.fov) * Math.min(1, dt * 10);
+    game.camera.fov += (targetFov - game.camera.fov) * Math.min(1, dt * adsSpeed);
     game.camera.updateProjectionMatrix();
 
     if (game.shake > 0) {
@@ -173,8 +182,9 @@ export class WeaponSystem {
   private firePellet(stats: typeof WEAPON_STATS.ar15, primary: boolean) {
     const game = this.game;
 
-    game.recoil.pitch += stats.recoil * (0.85 + Math.random() * 0.4);
-    game.recoil.yaw += (Math.random() - 0.5) * stats.recoil * 0.9;
+    const effRecoil = this.getEffectiveRecoil(stats.recoil);
+    game.recoil.pitch += effRecoil * (0.85 + Math.random() * 0.4);
+    game.recoil.yaw += (Math.random() - 0.5) * effRecoil * 0.9;
     game.shake = Math.min(0.5, game.shake + 0.12);
 
     if (primary) {
@@ -193,7 +203,7 @@ export class WeaponSystem {
     dir.y += (Math.random() - 0.5) * sp;
     dir.normalize();
     game.raycaster.ray.direction.copy(dir);
-    game.raycaster.far = stats.range;
+    game.raycaster.far = this.getEffectiveRange(stats.range);
 
     const targets: THREE.Object3D[] = [...game.map.rayMeshes];
     game.remote.forEach((a) => {
@@ -222,7 +232,7 @@ export class WeaponSystem {
             const hitY = h.point.y;
             const actor = game.mode === "client" ? null : game.netState.get(targetId);
             const actorY = actor ? actor.py : (game.remote.get(targetId)?.state.py ?? 0);
-            const limbDmg = this.calcLimbDmg(currentDmg, stats, head, hitY, actorY);
+            const limbDmg = this.calcLimbDmg(this.getEffectiveDamage(currentDmg), stats, head, hitY, actorY);
             hitActor = true;
             const normal = h.normal ?? new THREE.Vector3(0, 1, 0);
             game.fx.spawnSparks(h.point, 0xcc1133, head ? 9 : 5, normal);
@@ -278,7 +288,7 @@ export class WeaponSystem {
             const hitY = h.point.y;
             const actor = game.mode === "client" ? null : game.netState.get(targetId);
             const actorY = actor ? actor.py : (game.remote.get(targetId)?.state.py ?? 0);
-            const limbDmg = this.calcLimbDmg(stats.damage, stats, head, hitY, actorY);
+            const limbDmg = this.calcLimbDmg(this.getEffectiveDamage(stats.damage), stats, head, hitY, actorY);
             if (game.mode === "client") {
               game.net?.send({ t: "fire", target: targetId, head });
             } else {
@@ -291,6 +301,32 @@ export class WeaponSystem {
     }
   }
 
+  hasAttach(type: AttachmentType): boolean {
+    return this.attachments.includes(type);
+  }
+
+  getEffectiveMagSize(base: number): number {
+    return this.hasAttach("extended_mag") ? Math.round(base * (ATTACHMENT_DEFS.extended_mag.magSizeMult!)) : base;
+  }
+
+  getEffectiveReloadTime(base: number): number {
+    let t = base;
+    if (this.hasAttach("extended_mag")) t *= ATTACHMENT_DEFS.extended_mag.reloadTimeMult!;
+    return t;
+  }
+
+  getEffectiveRange(base: number): number {
+    return this.hasAttach("suppressor") ? Math.round(base * ATTACHMENT_DEFS.suppressor.rangeMult!) : base;
+  }
+
+  getEffectiveDamage(base: number): number {
+    return this.hasAttach("suppressor") ? Math.round(base * ATTACHMENT_DEFS.suppressor.damageMult!) : base;
+  }
+
+  getEffectiveRecoil(base: number): number {
+    return this.hasAttach("grip") ? base * ATTACHMENT_DEFS.grip.recoilMult! : base;
+  }
+
   currentSpread() {
     const game = this.game;
     const lp = game.lp;
@@ -298,7 +334,13 @@ export class WeaponSystem {
     const planar = Math.hypot(lp.vel.x, lp.vel.z);
     let sp = stats.spread + (planar / PLAYER.speed) * stats.moveSpread * 0.5;
     if (lp.crouch) sp *= 0.6;
-    if (lp.ads) sp *= 0.3;
+    if (lp.ads) {
+      sp *= 0.3;
+      if (this.hasAttach("optic_reddot")) sp *= ATTACHMENT_DEFS.optic_reddot.adsSpreadMult!;
+      if (this.hasAttach("optic_holographic")) sp *= ATTACHMENT_DEFS.optic_holographic.adsSpreadMult!;
+      if (this.hasAttach("optic_sniper")) sp *= ATTACHMENT_DEFS.optic_sniper.adsSpreadMult!;
+    }
+    if (!lp.ads && this.hasAttach("laser")) sp *= ATTACHMENT_DEFS.laser.hipSpreadMult!;
     if (game.now < lp.sprintEnd) sp *= 1.8;
     if (game.now - lp.lastShot < 0.2) sp += 0.01;
     return sp;
@@ -320,9 +362,11 @@ export class WeaponSystem {
     const lp = game.lp;
     const stats = WEAPON_STATS[this.weaponType];
     if (lp.reloading || !lp.alive) return;
-    if (lp.ammo >= stats.magSize || lp.reserve <= 0) return;
+    const effMagSize = this.getEffectiveMagSize(stats.magSize);
+    if (lp.ammo >= effMagSize || lp.reserve <= 0) return;
     lp.reloading = true;
-    const reloadTime = game.activePerks.includes("gunner") ? stats.reloadTime * 0.7 : stats.reloadTime;
+    let reloadTime = game.activePerks.includes("gunner") ? stats.reloadTime * 0.7 : stats.reloadTime;
+    reloadTime = this.getEffectiveReloadTime(reloadTime);
     lp.reloadEnd = game.now + reloadTime;
     Sfx.reloadSound();
     game.pushHud(true);
@@ -332,7 +376,8 @@ export class WeaponSystem {
     const game = this.game;
     const lp = game.lp;
     const stats = WEAPON_STATS[this.weaponType];
-    const need = stats.magSize - lp.ammo;
+    const effMagSize = this.getEffectiveMagSize(stats.magSize);
+    const need = effMagSize - lp.ammo;
     const take = Math.min(need, lp.reserve);
     lp.ammo += take;
     lp.reserve -= take;

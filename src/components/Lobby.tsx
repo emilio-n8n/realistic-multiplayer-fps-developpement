@@ -21,6 +21,9 @@ interface Props {
   loadoutName?: string;
   onStart: () => void;
   onLeave: () => void;
+  votes?: number[];
+  votedMap?: number;
+  onVoteMap?: (index: number) => void;
 }
 
 function hex(c: number) {
@@ -189,6 +192,27 @@ export default function Lobby({ mode, code, status, error, name, peers, botCount
               <p className="text-center text-xs text-white/40">
                 Entraînement contre {botCount} bot{botCount > 1 ? "s" : ""} contrôlé{botCount > 1 ? "s" : ""} par l'IA
               </p>
+            </div>
+          )}
+
+          {/* map voting */}
+          {!isSolo && (
+            <div className="mt-4">
+              <div className="text-xs uppercase tracking-widest text-white/40 mb-2">Vote pour la carte</div>
+              <div className="flex gap-2">
+                {["Frontline Arena", "Désert", "Night Ops"].map((name, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onVoteMap?.(i)}
+                    className={`flex-1 rounded-lg p-3 text-center transition ${
+                      votedMap === i ? 'bg-amber-500/20 ring-2 ring-amber-400' : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="text-sm font-bold text-white/80">{name}</div>
+                    <div className="text-xs text-white/40">{votes?.[i] || 0} votes</div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

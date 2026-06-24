@@ -647,12 +647,67 @@ function buildPistol(): WeaponView {
 
 // ─── Entry point ──────────────────────────────────────────────────────
 
-export function buildWeaponView(type: WeaponType): WeaponView {
-  switch (type) {
-    case "ar15": return buildAr15();
-    case "smg": return buildSmg();
-    case "shotgun": return buildShotgun();
-    case "sniper": return buildSniper();
-    case "pistol": return buildPistol();
+function addAttachments(group: THREE.Group, type: WeaponType, attachments: import("./types").AttachmentType[]) {
+  if (type !== "ar15" && type !== "smg") return;
+  const matMetal = new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.45, metalness: 0.85 });
+  const matDark = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.6, metalness: 0.8 });
+  const matRed = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+  for (const a of attachments) {
+    switch (a) {
+      case "optic_reddot": {
+        const mount = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.015, 0.015), matDark);
+        mount.position.set(0, type === "ar15" ? 0.16 : 0.10, type === "ar15" ? -0.04 : 0.0);
+        group.add(mount);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.03, 8), matDark);
+        body.position.set(0, type === "ar15" ? 0.19 : 0.13, type === "ar15" ? -0.04 : 0.0);
+        body.rotation.x = Math.PI / 2;
+        group.add(body);
+        const lensMat = new THREE.MeshStandardMaterial({ color: 0x4488ff, roughness: 0.1, metalness: 0.2 });
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(0.015, 8), lensMat);
+        lens.position.set(0, type === "ar15" ? 0.19 : 0.13, type === "ar15" ? -0.028 : 0.012);
+        group.add(lens);
+        break;
+      }
+      case "suppressor": {
+        const supp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.12, 10), matDark);
+        supp.rotation.x = Math.PI / 2;
+        supp.position.set(0, type === "ar15" ? 0.06 : 0.045, type === "ar15" ? 0.78 : 0.48);
+        group.add(supp);
+        break;
+      }
+      case "grip": {
+        const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.035), matDark);
+        grip.position.set(0, type === "ar15" ? -0.01 : -0.01, type === "ar15" ? 0.34 : 0.14);
+        group.add(grip);
+        break;
+      }
+      case "laser": {
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.008, 0.06, 6), matMetal);
+        body.rotation.x = Math.PI / 2;
+        body.position.set(0, type === "ar15" ? 0.01 : 0.01, type === "ar15" ? 0.55 : 0.30);
+        group.add(body);
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.004, 4, 4), matRed);
+        dot.position.set(0, type === "ar15" ? 0.01 : 0.01, type === "ar15" ? 0.75 : 0.44);
+        group.add(dot);
+        break;
+      }
+    }
   }
+}
+
+export function buildWeaponView(type: WeaponType, attachments?: import("./types").AttachmentType[]): WeaponView {
+  let view: WeaponView;
+  switch (type) {
+    case "ar15": view = buildAr15(); break;
+    case "smg": view = buildSmg(); break;
+    case "shotgun": view = buildShotgun(); break;
+    case "sniper": view = buildSniper(); break;
+    case "pistol": view = buildPistol(); break;
+    default: view = buildAr15(); break;
+  }
+  if (attachments && attachments.length > 0) {
+    addAttachments(view.group, type, attachments);
+  }
+  return view;
 }
