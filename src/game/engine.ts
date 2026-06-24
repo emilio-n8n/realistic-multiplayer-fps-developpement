@@ -18,6 +18,7 @@ export interface GameOpts {
   color: number;
   botCount: number;
   net?: Net | null;
+  lobbyPeers?: { id: string; name: string; color: number }[];
   onHud: (s: HudState) => void;
   onLockChange: (locked: boolean) => void;
   onEvent: (e: { type: string; data?: unknown }) => void;
@@ -146,6 +147,12 @@ export class Game {
       this.syncSelfToNet();
     }
     if (this.net) this.attachNet();
+    // register peers that connected during the lobby phase
+    if (opts.lobbyPeers) {
+      for (const p of opts.lobbyPeers) {
+        this.addLobbyPeer(p.id, p.name, p.color);
+      }
+    }
   }
 
   // ---------------- setup ----------------
@@ -965,6 +972,35 @@ export class Game {
       }
     }
     return best.clone();
+  }
+
+  private addLobbyPeer(id: string, name: string, color: number) {
+    if (this.mode !== "host") return;
+    const sp = this.pickSpawn(this.lp.pos);
+    const st: PState = {
+      id,
+      name,
+      color,
+      px: sp.x,
+      py: 0,
+      pz: sp.z,
+      yaw: 0,
+      pitch: 0,
+      hp: PLAYER.maxHp,
+      alive: true,
+      isBot: false,
+      firing: false,
+      kills: 0,
+      deaths: 0,
+      killstreak: 0,
+      respawnAt: 0,
+      lastHurt: -99,
+    };
+    this.netState.set(id, st);
+    this.ensureActor(st);
+    this.net?.sendTo(id, { t: "welcome", you: id, players: this.snapshot() });
+    this.onEvent({ type: "status", data: `${name} a rejoint la partie` });
+    this.pushHud(true);
   }
 
   // ---------------- actors (remote players/bots visuals) ----------------

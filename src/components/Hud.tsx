@@ -12,13 +12,12 @@ interface Props {
   mode: GameMode;
   code: string | null;
   status: string;
-  error: string | null;
   name: string;
   onResume: () => void;
   onLeave: () => void;
 }
 
-export default function Hud({ hud, mode, code, status, error, name, onResume, onLeave }: Props) {
+export default function Hud({ hud, mode, code, status, name, onResume, onLeave }: Props) {
   const [showScore, setShowScore] = useState(false);
   const [muted, setMuted] = useState(!isAudioEnabled());
   const nowRef = useRef(performance.now());
