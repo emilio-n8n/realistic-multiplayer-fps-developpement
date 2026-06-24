@@ -4,16 +4,18 @@ interface LobbyPeer {
   id: string;
   name: string;
   color: number;
+  team?: "red" | "blue";
 }
 
 interface Props {
-  mode: "solo" | "host" | "client";
+  mode: "solo" | "host" | "client" | "tdm";
   code: string | null;
   status: string;
   error: string | null;
   name: string;
   peers: LobbyPeer[];
   botCount: number;
+  team?: "red" | "blue";
   onStart: () => void;
   onLeave: () => void;
 }
@@ -22,7 +24,7 @@ function hex(c: number) {
   return "#" + c.toString(16).padStart(6, "0");
 }
 
-export default function Lobby({ mode, code, status, error, name, peers, botCount, onStart, onLeave }: Props) {
+export default function Lobby({ mode, code, status, error, name, peers, botCount, team, onStart, onLeave }: Props) {
   const isHost = mode === "host";
   const isClient = mode === "client";
   const isSolo = mode === "solo";
@@ -127,12 +129,24 @@ export default function Lobby({ mode, code, status, error, name, peers, botCount
                 <div className="flex items-center gap-3 rounded-lg bg-amber-400/10 px-3 py-2 ring-1 ring-amber-400/20">
                   <span className="inline-block h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: hex(COLORS[0]) }} />
                   <span className="font-bold text-amber-200">{name}</span>
-                  <span className="ml-auto text-[10px] uppercase tracking-wider text-amber-400/60">Toi</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    {team && (
+                      <span className={`text-[10px] uppercase tracking-wider ${team === "red" ? "text-red-400" : "text-blue-400"}`}>
+                        {team === "red" ? "Rouge" : "Bleu"}
+                      </span>
+                    )}
+                    <span className="text-[10px] uppercase tracking-wider text-amber-400/60">Toi</span>
+                  </span>
                 </div>
                 {peers.map((p) => (
                   <div key={p.id} className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
                     <span className="inline-block h-3 w-3 rounded-full ring-2 ring-white/10" style={{ background: hex(p.color) }} />
                     <span className="text-white/80">{p.name}</span>
+                    {p.team && (
+                      <span className={`ml-auto text-[10px] uppercase tracking-wider ${p.team === "red" ? "text-red-400" : "text-blue-400"}`}>
+                        {p.team === "red" ? "Rouge" : "Bleu"}
+                      </span>
+                    )}
                   </div>
                 ))}
                 {/* empty slots hint */}

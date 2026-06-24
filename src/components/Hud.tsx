@@ -15,9 +15,10 @@ interface Props {
   name: string;
   onResume: () => void;
   onLeave: () => void;
+  onRestart: () => void;
 }
 
-export default function Hud({ hud, mode, code, status, name, onResume, onLeave }: Props) {
+export default function Hud({ hud, mode, code, status, name, onResume, onLeave, onRestart }: Props) {
   const [showScore, setShowScore] = useState(false);
   const [muted, setMuted] = useState(!isAudioEnabled());
   const nowRef = useRef(performance.now());
@@ -45,16 +46,36 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
   const hitFlash = now - hud.hitmarker < 140;
   const killFlash = now - hud.killmarker < 220;
   const recentDamage = now - hud.damageTime < 700;
+  const showDamageNum = hud.lastDamageDealt > 0 && now - hud.lastDamageDealtTime < 600;
   const hpPct = Math.max(0, Math.min(1, hud.hp / hud.maxHp));
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-mono text-white">
+      <style>{`
+        @keyframes heartbeat {
+          0% { transform: scale(1); }
+          15% { transform: scale(1.03); }
+          30% { transform: scale(1); }
+          60% { transform: scale(1.01); }
+          100% { transform: scale(1); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes floatUp {
+          0% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-40px); }
+        }
+      `}</style>
+
       {/* vignette */}
       <div
         className="absolute inset-0 transition-opacity duration-300"
         style={{
           boxShadow: hud.lowHp ? "inset 0 0 200px 40px rgba(180,0,0,0.55)" : "inset 0 0 160px 30px rgba(0,0,0,0.45)",
           opacity: hud.lowHp ? 0.9 : 0.6,
+          animation: hud.lowHp ? "heartbeat 2s ease-in-out infinite" : "none",
         }}
       />
       {recentDamage && (
@@ -62,8 +83,20 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
       )}
 
       {/* crosshair */}
-      {hud.alive && !hud.paused && (
+      {hud.alive && !hud.paused && !hud.matchOver && (
         <Crosshair gap={hud.spread} hit={hitFlash} kill={killFlash} />
+      )}
+
+      {/* damage number popup */}
+      {showDamageNum && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-[46%] -translate-x-1/2"
+          style={{ animation: "floatUp 0.6s ease-out forwards" }}
+        >
+          <span className="text-2xl font-black text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]">
+            +{hud.lastDamageDealt}
+          </span>
+        </div>
       )}
 
       {/* damage direction */}
@@ -72,16 +105,17 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
           className="absolute left-1/2 top-1/2"
           style={{ transform: `translate(-50%,-50%) rotate(${hud.damageDir}rad)` }}
         >
-          <div style={{ width: 120, height: 120, transform: "translateY(-78px)" }} className="relative">
-            <svg width="120" height="120" viewBox="-60 -60 120 120" className="absolute inset-0">
-              <path d="M -26 -34 A 44 44 0 0 1 26 -34" stroke="rgba(255,40,40,0.9)" strokeWidth="9" fill="none" strokeLinecap="round" />
+          <div style={{ width: 140, height: 140, transform: "translateY(-88px)" }} className="relative">
+            <svg width="140" height="140" viewBox="-70 -70 140 140" className="absolute inset-0">
+              <path d="M -30 -42 A 52 52 0 0 1 30 -42" stroke="rgba(255,200,200,0.3)" strokeWidth="14" fill="none" strokeLinecap="round" />
+              <path d="M -30 -42 A 52 52 0 0 1 30 -42" stroke="rgba(255,40,40,0.9)" strokeWidth="10" fill="none" strokeLinecap="round" />
             </svg>
           </div>
         </div>
       )}
 
       {/* center message */}
-      {hud.message && (
+      {hud.message && !hud.matchOver && (
         <div className="absolute left-1/2 top-[26%] -translate-x-1/2 text-center">
           <div className="text-3xl font-black tracking-widest text-amber-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
             {hud.message}
@@ -90,10 +124,18 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
       )}
 
       {/* radar */}
-      <Radar radar={hud.radar} yawDir />
+      <Radar radar={hud.radar} yaw={hud.yaw} />
 
       {/* top center stats */}
       <div className="absolute left-1/2 top-3 -translate-x-1/2 flex items-center gap-6 rounded-md bg-black/45 px-5 py-1.5 text-sm backdrop-blur">
+        {hud.tdm && (
+          <>
+            <span className="text-red-400 font-bold">{hud.teamKillsRed}</span>
+            <span className="text-white/30">-</span>
+            <span className="text-blue-400 font-bold">{hud.teamKillsBlue}</span>
+            <span className="h-4 w-px bg-white/10" />
+          </>
+        )}
         <span className="text-emerald-400">
           K <b className="text-white">{hud.kills}</b>
         </span>
@@ -104,51 +146,83 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
           <span className="rounded bg-amber-500/80 px-2 py-0.5 text-xs font-bold text-black">SÉRIE x{hud.killstreak}</span>
         )}
         <span className="text-white/60">{hud.playerCount} joueur{hud.playerCount > 1 ? "s" : ""}</span>
+        {hud.tdm && (
+          <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+            hud.team === "red" ? "bg-red-500/30 text-red-300" : "bg-blue-500/30 text-blue-300"
+          }`}>
+            {hud.team === "red" ? "ROUGE" : "BLEU"}
+          </span>
+        )}
       </div>
 
       {/* killfeed */}
       <div className="absolute right-3 top-14 flex flex-col items-end gap-1 text-xs">
-        {hud.killfeed.map((k) => (
-          <div
-            key={k.id}
-            className={`flex items-center gap-2 rounded bg-black/55 px-2 py-1 backdrop-blur ${k.self ? "border border-amber-400/50" : ""}`}
-          >
-            <span className={k.killer === name ? "text-amber-300" : "text-white/80"}>{k.killer}</span>
-            <span className="text-rose-400">{k.head ? "🎯" : "✕"}</span>
-            <span className={k.victim === name ? "text-rose-300" : "text-white/50"}>{k.victim}</span>
-          </div>
-        ))}
+        {hud.killfeed.map((k) => {
+          const age = (now - k.time) / 1000;
+          const opacity = Math.max(0.25, 1 - age / 5.5);
+          return (
+            <div
+              key={k.id}
+              className={`flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 backdrop-blur transition-opacity duration-300 ${k.self ? "border border-amber-400/50" : ""}`}
+              style={{ opacity }}
+            >
+              <span className={k.killer === name ? "text-amber-300" : "text-white/80"}>{k.killer}</span>
+              <span className="text-[10px] text-white/30">[AR]</span>
+              <span className={k.head ? "text-yellow-300" : "text-rose-400"}>{k.head ? "💀" : "✕"}</span>
+              <span className={k.victim === name ? "text-rose-300" : "text-white/50"}>{k.victim}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* health */}
       <div className="absolute bottom-6 left-6 w-64">
         <div className="mb-1 flex items-end justify-between">
           <span className="text-xs uppercase tracking-widest text-white/60">Santé</span>
-          <span className={`text-2xl font-black ${hud.lowHp ? "text-rose-400" : "text-white"}`}>{hud.hp}</span>
+          <span className={`text-2xl font-black transition-all duration-200 ${hud.lowHp ? "text-rose-400" : "text-white"}`}>
+            {hud.hp}
+          </span>
         </div>
         <div className="h-2.5 w-full overflow-hidden rounded-full bg-black/60 ring-1 ring-white/15">
           <div
-            className="h-full rounded-full transition-all duration-150"
+            className="h-full rounded-full transition-all duration-150 ease-out"
             style={{
               width: `${hpPct * 100}%`,
               background: hud.lowHp ? "linear-gradient(90deg,#7f1d1d,#ef4444)" : "linear-gradient(90deg,#166534,#22c55e)",
             }}
           />
         </div>
+        {hud.lowHp && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-500" />
+            <span className="text-[10px] uppercase tracking-wider text-rose-400/80">Santé critique</span>
+          </div>
+        )}
       </div>
 
-      {/* ammo */}
+      {/* weapon / ammo */}
       <div className="absolute bottom-6 right-6 text-right">
+        <div className="mb-1 flex items-center justify-end gap-2">
+          <div className="flex h-5 w-8 items-center justify-center rounded bg-white/10 text-[10px] font-bold text-white/70 ring-1 ring-white/20">
+            {hud.fireMode === "auto" ? "A" : "S"}
+          </div>
+          <span className="text-xs uppercase tracking-wider text-white/70">{hud.weaponName}</span>
+        </div>
         <div className="text-xs uppercase tracking-widest text-white/60">{hud.reloading ? "Rechargement…" : "Munitions"}</div>
         <div className="flex items-end justify-end gap-2">
-          <span className={`text-4xl font-black ${hud.ammo === 0 ? "text-rose-500" : "text-white"}`}>
+          <span
+            className={`text-4xl font-black transition-colors duration-200 ${hud.ammo === 0 ? "animate-pulse text-rose-500" : "text-white"}`}
+          >
             {hud.reloading ? Math.round(hud.reloadProgress * hud.mag) : hud.ammo}
           </span>
           <span className="mb-1 text-lg text-white/50">/ {hud.reserve}</span>
         </div>
         {hud.reloading && (
-          <div className="ml-auto mt-1 h-1.5 w-36 overflow-hidden rounded-full bg-black/60">
-            <div className="h-full bg-amber-400 transition-all" style={{ width: `${hud.reloadProgress * 100}%` }} />
+          <div className="ml-auto mt-1 h-1.5 w-36 overflow-hidden rounded-full bg-black/60 ring-1 ring-amber-400/30">
+            <div
+              className="h-full rounded-full bg-amber-400 transition-all duration-100"
+              style={{ width: `${hud.reloadProgress * 100}%` }}
+            />
           </div>
         )}
       </div>
@@ -167,44 +241,167 @@ export default function Hud({ hud, mode, code, status, name, onResume, onLeave }
 
       {/* scoreboard */}
       {showScore && (
-        <div className="absolute left-1/2 top-1/2 w-[420px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg bg-black/75 ring-1 ring-white/15 backdrop-blur">
+        <div className="absolute left-1/2 top-1/2 w-[500px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg bg-black/75 ring-1 ring-white/15 backdrop-blur">
           <div className="bg-white/5 px-4 py-2 text-center text-sm uppercase tracking-widest text-amber-300">Tableau des scores</div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-white/50">
-                <th className="px-4 py-1 text-left font-normal">Joueur</th>
-                <th className="px-3 py-1 text-right font-normal">K</th>
-                <th className="px-3 py-1 text-right font-normal">M</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hud.scoreboard.map((r, i) => (
-                <tr key={i} className={r.self ? "bg-amber-400/15" : ""}>
-                  <td className="px-4 py-1.5 text-left">
-                    <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: hex(r.color) }} />
-                    <span className={r.self ? "text-amber-200" : "text-white/85"}>{r.name}</span>
-                    {!r.alive && <span className="ml-1 text-rose-400/70">☠</span>}
-                    {r.isBot && <span className="ml-1 text-white/30 text-[10px]">BOT</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-emerald-400">{r.kills}</td>
-                  <td className="px-3 py-1.5 text-right text-rose-400">{r.deaths}</td>
+          {hud.tdm && (
+            <div className="flex justify-between px-4 py-1.5 border-b border-white/10 text-sm font-bold">
+              <span className="text-red-400">Rouge: {hud.teamKillsRed}</span>
+              <span className="text-blue-400">Bleu: {hud.teamKillsBlue}</span>
+            </div>
+          )}
+          <div className="max-h-[320px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-white/50">
+                  {hud.tdm && <th className="px-2 py-1 text-left font-normal w-6">Éq</th>}
+                  <th className="px-4 py-1 text-left font-normal">Joueur</th>
+                  <th className="px-3 py-1 text-right font-normal">K</th>
+                  <th className="px-3 py-1 text-right font-normal">M</th>
+                  <th className="px-3 py-1 text-right font-normal">K/D</th>
+                  <th className="px-3 py-1 text-right font-normal">Ping</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {hud.scoreboard.map((r, i) => (
+                  <tr key={i} className={r.self ? "bg-amber-400/15" : i % 2 === 0 ? "bg-white/5" : ""}>
+                    {hud.tdm && (
+                      <td className="px-2 py-1.5 text-center">
+                        <span className={`inline-block h-2.5 w-2.5 rounded-full ${r.team === "red" ? "bg-red-500" : r.team === "blue" ? "bg-blue-500" : "bg-gray-500"}`} />
+                      </td>
+                    )}
+                    <td className="px-4 py-1.5 text-left">
+                      <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: hex(r.color) }} />
+                      <span className={r.self ? "font-bold text-amber-200" : "text-white/85"}>{r.name}</span>
+                      {!r.alive && <span className="ml-1 text-rose-400/70">☠</span>}
+                      {r.isBot && <span className="ml-1 text-white/30 text-[10px]">BOT</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-emerald-400">{r.kills}</td>
+                    <td className="px-3 py-1.5 text-right text-rose-400">{r.deaths}</td>
+                    <td className="px-3 py-1.5 text-right text-white/70">
+                      {r.deaths > 0 ? (r.kills / r.deaths).toFixed(1) : r.kills > 0 ? "∞" : "0.0"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      <span
+                        className={`inline-block h-1.5 w-6 rounded-full ${hud.ping > 100 ? "bg-red-400" : "bg-emerald-400"}`}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* respawn overlay */}
-      {!hud.alive && !hud.paused && (
+      {!hud.alive && !hud.paused && !hud.matchOver && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/55 backdrop-blur-sm">
           <div className="text-5xl font-black tracking-widest text-rose-500 drop-shadow">ÉLIMINÉ</div>
           <div className="mt-3 text-white/70">Réapparition dans {Math.ceil(hud.respawnIn)}…</div>
         </div>
       )}
 
+      {/* match over overlay */}
+      {hud.matchOver && hud.matchResult && (
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-md"
+          style={{ animation: "fadeIn 0.5s ease-out forwards" }}
+        >
+          <div
+            className="pointer-events-auto w-[480px] max-w-[92vw] rounded-2xl border border-white/10 bg-zinc-900/90 p-7 shadow-2xl"
+            style={{ animation: "fadeIn 0.5s ease-out forwards" }}
+          >
+            <div className="text-center">
+              <div className="text-sm uppercase tracking-[0.3em] text-amber-400/60">Partie terminée</div>
+              <h2 className="mt-2 text-4xl font-black text-white">
+                FRONT<span className="text-amber-400">LINE</span>
+              </h2>
+              <div className="mt-4">
+                <div className="text-lg text-white/60">Vainqueur</div>
+                <div className="mt-1 text-3xl font-black text-amber-300">{hud.matchResult.winner}</div>
+              </div>
+            </div>
+
+            {/* MVP */}
+            {hud.matchResult.stats.length > 0 &&
+              (() => {
+                const mvp = hud.matchResult.stats.reduce((best, r) => (r.kills > best.kills ? r : best));
+                return (
+                  <div className="mt-5 rounded-xl bg-amber-500/10 px-4 py-3 ring-1 ring-amber-400/30">
+                    <div className="text-center text-xs uppercase tracking-widest text-amber-400/60">MVP</div>
+                    <div className="mt-1 flex items-center justify-center gap-3">
+                      <span
+                        className="inline-block h-4 w-4 rounded-full ring-2 ring-amber-400/50"
+                        style={{ background: hex(mvp.color) }}
+                      />
+                      <span className="text-lg font-bold text-amber-200">{mvp.name}</span>
+                      <span className="text-sm text-amber-300/80">
+                        {mvp.kills}K / {mvp.deaths}M
+                      </span>
+                    </div>
+                    <div className="mt-1 text-center text-xs text-amber-400/50">
+                      K/D: {mvp.deaths > 0 ? (mvp.kills / mvp.deaths).toFixed(1) : mvp.kills > 0 ? "∞" : "0.0"} ·{" "}
+                      Précision: {mvp.kills > 0 ? `${Math.round((mvp.kills / (mvp.kills + mvp.deaths)) * 100)}%` : "—"}
+                    </div>
+                  </div>
+                );
+              })()}
+
+            {/* stats table */}
+            <div className="mt-4 max-h-[200px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wider text-white/40">
+                    <th className="px-3 py-1 text-left font-normal">Joueur</th>
+                    <th className="px-3 py-1 text-right font-normal">K</th>
+                    <th className="px-3 py-1 text-right font-normal">M</th>
+                    <th className="px-3 py-1 text-right font-normal">K/D</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hud.matchResult.stats.map((r, i) => (
+                    <tr key={i} className={r.self ? "bg-amber-400/10" : ""}>
+                      <td className="px-3 py-1.5 text-left">
+                        <span
+                          className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                          style={{ background: hex(r.color) }}
+                        />
+                        <span className={r.self ? "font-bold text-amber-200" : "text-white/80"}>{r.name}</span>
+                        {!r.alive && <span className="ml-1 text-rose-400/70">☠</span>}
+                        {r.isBot && <span className="ml-1 text-white/30 text-[10px]">BOT</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-emerald-400">{r.kills}</td>
+                      <td className="px-3 py-1.5 text-right text-rose-400">{r.deaths}</td>
+                      <td className="px-3 py-1.5 text-right text-white/60">
+                        {r.deaths > 0 ? (r.kills / r.deaths).toFixed(1) : r.kills > 0 ? "∞" : "0.0"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* buttons */}
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={onRestart}
+                className="flex-1 rounded-lg bg-amber-500 py-3 text-center font-bold text-black transition hover:bg-amber-400"
+              >
+                ▶ REJOUER
+              </button>
+              <button
+                onClick={onLeave}
+                className="flex-1 rounded-lg bg-white/5 py-3 text-center text-sm text-white/60 ring-1 ring-white/10 transition hover:bg-white/10"
+              >
+                Quitter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* pause / menu overlay */}
-      {hud.paused && (
+      {hud.paused && !hud.matchOver && (
         <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-md" onClick={onResume}>
           <div className="w-[460px] max-w-[92vw] rounded-2xl border border-white/10 bg-zinc-900/90 p-7 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-center text-3xl font-black tracking-tight text-white">
@@ -287,28 +484,76 @@ function Crosshair({ gap, hit, kill }: { gap: number; hit: boolean; kill: boolea
             <line x1="16" y1="16" x2="9" y2="9" stroke={color} strokeWidth="2.5" />
           </svg>
         )}
+        {/* skull on kill */}
+        {kill && (
+          <span className="absolute text-lg" style={{ left: -9, top: -34 }}>
+            💀
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function Radar({ radar }: { radar: HudState["radar"]; yawDir?: boolean }) {
-  const R = 58;
+function Radar({ radar, yaw }: { radar: HudState["radar"]; yaw?: number }) {
+  const R = 68;
   const range = 45;
+  const deg = (yaw ?? 0) * (180 / Math.PI);
   return (
-    <div className="absolute left-4 top-14 h-[120px] w-[120px] rounded-full bg-black/45 ring-1 ring-white/15 backdrop-blur">
-      <div className="absolute inset-0 rounded-full" style={{ boxShadow: "inset 0 0 20px rgba(0,0,0,0.6)" }} />
-      <svg width="120" height="120" viewBox="-60 -60 120 120" className="absolute inset-0">
-        <circle cx="0" cy="0" r="40" stroke="rgba(255,255,255,0.08)" strokeWidth="1" fill="none" />
-        <circle cx="0" cy="0" r="22" stroke="rgba(255,255,255,0.08)" strokeWidth="1" fill="none" />
-        <line x1="0" y1="-58" x2="0" y2="58" stroke="rgba(255,255,255,0.06)" />
-        <line x1="-58" y1="0" x2="58" y2="0" stroke="rgba(255,255,255,0.06)" />
+    <div className="absolute left-4 top-14 h-[150px] w-[150px] rounded-full">
+      <svg width="150" height="150" viewBox="-75 -75 150 150" className="absolute inset-0">
+        {/* outer compass ring */}
+        <circle cx="0" cy="0" r="73" stroke="rgba(255,255,255,0.15)" strokeWidth="2" fill="none" />
+        <circle cx="0" cy="0" r="71" stroke="rgba(255,255,255,0.06)" strokeWidth="1" fill="none" />
+        {/* rotating direction labels and ticks */}
+        <g transform={`rotate(${-deg})`}>
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+            <line
+              key={a}
+              x1={0}
+              y1={-71}
+              x2={0}
+              y2={a % 90 === 0 ? -67 : -69}
+              stroke="rgba(255,255,255,0.2)"
+              strokeWidth={a % 90 === 0 ? 2 : 1}
+              transform={`rotate(${a})`}
+            />
+          ))}
+          <text x="0" y="-60" textAnchor="middle" fill="rgba(255,255,255,0.85)" fontSize="10" fontWeight="bold" fontFamily="monospace">
+            N
+          </text>
+          <text x="64" y="4" textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize="8" fontFamily="monospace">
+            E
+          </text>
+          <text x="0" y="72" textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize="8" fontFamily="monospace">
+            S
+          </text>
+          <text x="-64" y="4" textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize="8" fontFamily="monospace">
+            W
+          </text>
+        </g>
+        {/* radar background */}
+        <circle cx="0" cy="0" r="65" fill="rgba(0,0,0,0.5)" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+        <circle cx="0" cy="0" r="44" stroke="rgba(255,255,255,0.07)" strokeWidth="1" fill="none" />
+        <circle cx="0" cy="0" r="24" stroke="rgba(255,255,255,0.07)" strokeWidth="1" fill="none" />
+        <line x1="0" y1="-65" x2="0" y2="65" stroke="rgba(255,255,255,0.05)" />
+        <line x1="-65" y1="0" x2="65" y2="0" stroke="rgba(255,255,255,0.05)" />
         {/* self */}
-        <polygon points="0,-6 4,5 0,2 -4,5" fill="rgba(255,255,255,0.9)" />
+        <polygon points="0,-7 4.5,5.5 0,2.5 -4.5,5.5" fill="rgba(255,255,255,0.9)" />
         {radar.map((b, i) => {
-          const x = Math.max(-55, Math.min(55, (b.x / range) * R));
-          const y = Math.max(-55, Math.min(55, -(b.z / range) * R));
-          return <circle key={i} cx={x} cy={y} r={b.firing ? 4 : 2.5} fill={b.firing ? "#ff3b3b" : "rgba(255,120,120,0.7)"} />;
+          const x = Math.max(-62, Math.min(62, (b.x / range) * R));
+          const y = Math.max(-62, Math.min(62, -(b.z / range) * R));
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r={b.firing ? 4.5 : 3}
+              fill={b.enemy ? (b.firing ? "#ff3b3b" : "rgba(255,120,120,0.7)") : b.firing ? "#3bff3b" : "rgba(120,255,120,0.7)"}
+              stroke={b.enemy ? "rgba(255,0,0,0.3)" : "rgba(0,255,0,0.3)"}
+              strokeWidth={1}
+            />
+          );
         })}
       </svg>
     </div>

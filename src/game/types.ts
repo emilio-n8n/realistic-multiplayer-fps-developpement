@@ -18,6 +18,7 @@ export interface PState {
   killstreak: number;
   respawnAt?: number;
   lastHurt?: number;
+  team: "red" | "blue";
 }
 
 export interface KillFeedItem {
@@ -36,8 +37,14 @@ export interface ScoreRow {
   deaths: number;
   isBot: boolean;
   color: number;
+  team: "red" | "blue" | null;
   alive: boolean;
   self: boolean;
+}
+
+export interface MatchResult {
+  winner: string;
+  stats: ScoreRow[];
 }
 
 export interface RadarBlip {
@@ -74,6 +81,18 @@ export interface HudState {
   paused: boolean;
   connected: boolean;
   playerCount: number;
+  matchOver: boolean;
+  matchResult: MatchResult | null;
+  weaponName: string;
+  fireMode: "auto" | "semi";
+  lastDamageDealt: number;
+  lastDamageDealtTime: number;
+  ping: number;
+  yaw: number;
+  teamKillsRed: number;
+  teamKillsBlue: number;
+  tdm: boolean;
+  team: "red" | "blue";
 }
 
 export const WEAPON = {

@@ -15,12 +15,15 @@ interface Session {
   name: string;
   color: number;
   botCount: number;
+  tdm?: boolean;
+  team?: "red" | "blue";
 }
 
 interface LobbyPeer {
   id: string;
   name: string;
   color: number;
+  team?: "red" | "blue";
 }
 
 export default function App() {
@@ -47,14 +50,23 @@ export default function App() {
   }, []);
 
   // factory for host lobby callbacks
-  function lobbyHostCb(): NetCallbacks {
+  function lobbyHostCb(tdm: boolean = false): NetCallbacks {
     return {
       onStatus: (s) => setConn((c) => ({ ...c, status: s })),
       onCodeReady: (code) => setConn((c) => ({ ...c, code })),
       onJoined: () => {},
       onPeerJoin: (id, name) => {
         const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-        setLobbyPeers((prev) => [...prev, { id, name, color }]);
+        setLobbyPeers((prev) => {
+          let team: "red" | "blue" | undefined;
+          if (tdm) {
+            const hostTeam = sessionRef.current?.team ?? "red";
+            const redCount = prev.filter(p => p.team === "red").length + (hostTeam === "red" ? 1 : 0);
+            const blueCount = prev.filter(p => p.team === "blue").length + (hostTeam === "blue" ? 1 : 0);
+            team = redCount <= blueCount ? "red" : "blue";
+          }
+          return [...prev, { id, name, color, team }];
+        });
       },
       onPeerLeave: (id) => {
         setLobbyPeers((prev) => prev.filter((p) => p.id !== id));
@@ -64,17 +76,17 @@ export default function App() {
     };
   }
 
-  const startSolo = (name: string, color: number, bots: number) => {
-    sessionRef.current = { mode: "solo", name, color, botCount: bots };
+  const startSolo = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => {
+    sessionRef.current = { mode: tdm ? "tdm" : "solo", name, color, botCount: bots, tdm, team };
     setConn({ code: null, status: "Prêt au combat", error: null });
     setLobbyPeers([]);
     setScreen("lobby");
   };
 
-  const startHost = (name: string, color: number, bots: number) => {
-    const net = new Net(lobbyHostCb());
+  const startHost = (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => {
+    const net = new Net(lobbyHostCb(tdm));
     netRef.current = net;
-    sessionRef.current = { mode: "host", name, color, botCount: bots };
+    sessionRef.current = { mode: "host", name, color, botCount: bots, tdm, team };
     setConn({ code: null, status: "Création de la partie…", error: null });
     setLobbyPeers([]);
     net.host(name);
@@ -128,6 +140,10 @@ export default function App() {
     gameRef.current?.requestLock();
   }, []);
 
+  const handleRestart = useCallback(() => {
+    gameRef.current?.restartMatch();
+  }, []);
+
   // create / destroy the engine when entering the game screen
   useEffect(() => {
     if (screen !== "game") return;
@@ -142,6 +158,8 @@ export default function App() {
       name: session.name,
       color: session.color,
       botCount: session.botCount,
+      tdm: session.tdm,
+      team: session.team,
       lobbyPeers: lobbyPeersRef.current,
       onHud: setHud,
       onLockChange: () => {},
@@ -179,6 +197,7 @@ export default function App() {
         name={sessionRef.current?.name ?? ""}
         peers={lobbyPeers}
         botCount={sessionRef.current?.botCount ?? 0}
+        team={sessionRef.current?.team}
         onStart={handleLobbyStart}
         onLeave={leave}
       />
@@ -198,6 +217,7 @@ export default function App() {
           name={sessionRef.current?.name ?? ""}
           onResume={resume}
           onLeave={leave}
+          onRestart={handleRestart}
         />
       )}
     </div>

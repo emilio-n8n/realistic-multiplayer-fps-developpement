@@ -2,8 +2,8 @@ import { useState } from "react";
 import { COLORS } from "../game/types";
 
 interface Props {
-  onStartSolo: (name: string, color: number, bots: number) => void;
-  onHost: (name: string, color: number, bots: number) => void;
+  onStartSolo: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => void;
+  onHost: (name: string, color: number, bots: number, tdm: boolean, team: "red" | "blue") => void;
   onJoin: (name: string, color: number, code: string) => void;
   error: string | null;
   connecting: boolean;
@@ -17,11 +17,13 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
   const [color, setColor] = useState(COLORS[0]);
   const [bots, setBots] = useState(6);
   const [code, setCode] = useState("");
+  const [gameMode, setGameMode] = useState<"ffa" | "tdm">("ffa");
+  const [team, setTeam] = useState<"red" | "blue">("red");
 
   const start = () => {
     if (connecting) return;
-    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots);
-    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots);
+    if (tab === "solo") onStartSolo(name.trim() || "Joueur", color, bots, gameMode === "tdm", team);
+    else if (tab === "host") onHost(name.trim() || "Joueur", color, bots, gameMode === "tdm", team);
     else onJoin(name.trim() || "Joueur", color, code.trim().toUpperCase());
   };
 
@@ -160,6 +162,49 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                   />
                 </Field>
               ) : (
+                <>
+                <Field label="Mode de jeu">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setGameMode("ffa")}
+                      className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                        gameMode === "ffa" ? "bg-amber-500 text-black" : "bg-white/5 text-white/60 hover:bg-white/10"
+                      }`}
+                    >
+                      FFA
+                    </button>
+                    <button
+                      onClick={() => setGameMode("tdm")}
+                      className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                        gameMode === "tdm" ? "bg-amber-500 text-black" : "bg-white/5 text-white/60 hover:bg-white/10"
+                      }`}
+                    >
+                      TDM
+                    </button>
+                  </div>
+                </Field>
+                {gameMode === "tdm" && (
+                  <Field label="Équipe">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setTeam("red")}
+                        className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                          team === "red" ? "bg-red-500/30 text-red-300 ring-1 ring-red-400" : "bg-white/5 text-white/60 hover:bg-white/10"
+                        }`}
+                      >
+                        Rouge
+                      </button>
+                      <button
+                        onClick={() => setTeam("blue")}
+                        className={`flex-1 rounded-lg py-2 text-sm font-bold transition ${
+                          team === "blue" ? "bg-blue-500/30 text-blue-300 ring-1 ring-blue-400" : "bg-white/5 text-white/60 hover:bg-white/10"
+                        }`}
+                      >
+                        Bleu
+                      </button>
+                    </div>
+                  </Field>
+                )}
                 <Field label={`Bots ennemis : ${bots}`}>
                   <input
                     type="range"
@@ -175,6 +220,7 @@ export default function Menu({ onStartSolo, onHost, onJoin, error, connecting }:
                     <span>10</span>
                   </div>
                 </Field>
+              </>
               )}
 
               {error && (
